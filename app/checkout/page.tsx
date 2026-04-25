@@ -1,62 +1,87 @@
-"use client";
-import { useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+// app/checkout/page.tsx
+// ─────────────────────────────────────────────────────────────────────────────
+// Server component — decodes the JWT from ?token= on the server.
+// Customer info and cart data never touch the client until pre-filled in form.
+// ─────────────────────────────────────────────────────────────────────────────
 
-function CheckoutContent() {
-  const searchParams = useSearchParams();
-  const productTitle = searchParams.get("title");
-  const productPrice = searchParams.get("price");
-  const variantId = searchParams.get("variantId");
+import {
+  verifyCheckoutToken,
+  type CheckoutPayload,
+} from "../lib/checkout-token";
+import CheckoutClient from "./CheckoutClient";
+interface PageProps {
+  searchParams: { token?: string };
+}
 
-  const [loading, setLoading] = useState(false);
+export default async function CheckoutPage({ searchParams }: PageProps) {
+  const { token } = searchParams;
 
-  const handleCheckout = async () => {
-    setLoading(true);
-    const res = await fetch("/api/stripe/create-checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ variantId, productTitle, productPrice }),
-    });
-    const data = await res.json();
-    window.location.href = data.url;
-  };
+  // ── No token ──────────────────────────────────────────────────────────────
+  if (!token) {
+    return <TokenError message="No checkout session found." />;
+  }
 
+  // ── Verify + decode JWT on the server ────────────────────────────────────
+  let payload: CheckoutPayload;
+  try {
+    payload = await verifyCheckoutToken(token);
+  } catch (err: unknown) {
+    const isExpired = err instanceof Error && err.message.includes("expired");
+    return (
+      <TokenError
+        message={
+          isExpired
+            ? "Your checkout session has expired. Please return to the store and try again."
+            : "Invalid checkout session. Please return to the store."
+        }
+      />
+    );
+  }
+
+  // ── Render client checkout with pre-filled data ───────────────────────────
+  return <CheckoutClient payload={payload} />;
+}
+
+// ─── Error screen ─────────────────────────────────────────────────────────────
+
+function TokenError({ message }: { message: string }) {
   return (
     <div
       style={{
-        fontFamily: "sans-serif",
-        padding: "40px",
-        maxWidth: "400px",
-        margin: "auto",
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: "'DM Sans', sans-serif",
+        background: "#f9f9f7",
+        gap: 16,
+        padding: 32,
+        textAlign: "center",
       }}
     >
-      <h2>Checkout</h2>
-      <p>
-        <strong>{productTitle}</strong>
+      <div style={{ fontSize: 48 }}>🔒</div>
+      <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>
+        Session Unavailable
+      </h2>
+      <p style={{ color: "#666", fontSize: 15, maxWidth: 380, margin: 0 }}>
+        {message}
       </p>
-      <p>Price: ${productPrice}</p>
-      <button
-        onClick={handleCheckout}
-        disabled={loading}
+      <a
+        href={`https://${process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN}`}
         style={{
+          marginTop: 8,
           padding: "12px 24px",
-          background: "#000",
+          background: "#111",
           color: "#fff",
-          border: "none",
-          cursor: "pointer",
-          borderRadius: "6px",
+          borderRadius: 8,
+          textDecoration: "none",
+          fontWeight: 600,
+          fontSize: 14,
         }}
       >
-        {loading ? "Processing..." : "Pay with Stripe"}
-      </button>
+        ← Back to Store
+      </a>
     </div>
-  );
-}
-
-export default function CheckoutPage() {
-  return (
-    <Suspense fallback={<div style={{ padding: "40px" }}>Loading...</div>}>
-      <CheckoutContent />
-    </Suspense>
   );
 }
