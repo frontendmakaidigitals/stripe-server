@@ -41,11 +41,11 @@ export async function POST(request: NextRequest) {
       line_items: [{ price: pkg.priceId, quantity: 1 }],
       allow_promotion_codes: true, // ← Stripe shows a coupon field natively
       success_url:
-        process.env.PRODUCTOIN === "true"
+        process.env.PRODUCTION === "true"
           ? "process.env.NEXT_PUBLIC_PROD_URL + '/success'"
           : "http://localhost:3000/success",
       cancel_url:
-        process.env.PRODUCTOIN === "true"
+        process.env.PRODUCTION === "true"
           ? "process.env.NEXT_PUBLIC_PROD_URL + '/failed'"
           : "http://localhost:3000/failed",
       metadata: {
