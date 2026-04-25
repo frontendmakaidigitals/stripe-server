@@ -9,17 +9,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { signCheckoutToken, type CartItem, type CustomerInfo } from "@/app/lib/checkout-token";
-// ─── CORS — allow requests from your Shopify store only ───────────────────────
+// ─── CORS — allow all origins ─────────────────────────────────────────────────
 
 const ALLOWED_SHOP = process.env.SHOPIFY_STORE_DOMAIN!; // e.g. "yourstore.myshopify.com"
 
-function corsHeaders(origin: string | null) {
-  const allowed = origin && (
-    origin === `https://${ALLOWED_SHOP}` ||
-    origin.endsWith(".myshopify.com")          // covers preview themes
-  );
+function corsHeaders(_origin: string | null) {
   return {
-    "Access-Control-Allow-Origin":  allowed ? origin! : "null",
+    "Access-Control-Allow-Origin":  "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   };
