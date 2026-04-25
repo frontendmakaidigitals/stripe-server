@@ -1,27 +1,22 @@
 // app/checkout/page.tsx
-// ─────────────────────────────────────────────────────────────────────────────
-// Server component — decodes the JWT from ?token= on the server.
-// Customer info and cart data never touch the client until pre-filled in form.
-// ─────────────────────────────────────────────────────────────────────────────
 
 import {
   verifyCheckoutToken,
   type CheckoutPayload,
 } from "../lib/checkout-token";
 import CheckoutClient from "./CheckoutClient";
+
 interface PageProps {
-  searchParams: { token?: string };
+  searchParams: Promise<{ token?: string }>;
 }
 
 export default async function CheckoutPage({ searchParams }: PageProps) {
-  const { token } = searchParams;
+  const { token } = await searchParams;
 
-  // ── No token ──────────────────────────────────────────────────────────────
   if (!token) {
     return <TokenError message="No checkout session found." />;
   }
 
-  // ── Verify + decode JWT on the server ────────────────────────────────────
   let payload: CheckoutPayload;
   try {
     payload = await verifyCheckoutToken(token);
@@ -38,13 +33,14 @@ export default async function CheckoutPage({ searchParams }: PageProps) {
     );
   }
 
-  // ── Render client checkout with pre-filled data ───────────────────────────
   return <CheckoutClient payload={payload} />;
 }
 
-// ─── Error screen ─────────────────────────────────────────────────────────────
-
 function TokenError({ message }: { message: string }) {
+  const storeUrl = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN
+    ? `https://${process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN}`
+    : "https://perfumeoasis.ae"; // fallback
+
   return (
     <div
       style={{
@@ -68,7 +64,7 @@ function TokenError({ message }: { message: string }) {
         {message}
       </p>
       <a
-        href={`https://${process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN}`}
+        href={storeUrl}
         style={{
           marginTop: 8,
           padding: "12px 24px",
