@@ -1,8 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function CheckoutPage() {
+function CheckoutContent() {
   const searchParams = useSearchParams();
   const productTitle = searchParams.get("title");
   const productPrice = searchParams.get("price");
@@ -18,7 +18,7 @@ export default function CheckoutPage() {
       body: JSON.stringify({ variantId, productTitle, productPrice }),
     });
     const data = await res.json();
-    window.location.href = data.url; // redirect to Stripe
+    window.location.href = data.url;
   };
 
   return (
@@ -50,5 +50,13 @@ export default function CheckoutPage() {
         {loading ? "Processing..." : "Pay with Stripe"}
       </button>
     </div>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: "40px" }}>Loading...</div>}>
+      <CheckoutContent />
+    </Suspense>
   );
 }
