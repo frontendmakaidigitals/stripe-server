@@ -15,79 +15,93 @@ export async function OPTIONS() {
     headers: CORS_HEADERS,
   });
 }
-async function getShopifyProduct(productId: string) {
-  const res = await fetch(
-    `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/api/2024-01/products/${productId}.json`,
-    {
-      headers: {
-        "X-Shopify-Access-Token": process.env.SHOPIFY_ADMIN_TOKEN!,
-      },
-    },
-  );
-
-  if (!res.ok) return null;
-  const { product } = await res.json();
-  return product;
-}
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, name, productId, variantId } = await request.json();
+    const body = await request.json();
 
-    if (!email || !name || !productId) {
+    // ✅ Shopify cart flow (from your store's checkout button)
+    if (body.items) {
+      const { items, currency } = body;
+
+      const lineItems = items.map((item: any) => ({
+        price_data: {
+          currency: currency?.toLowerCase() || "aed",
+          product_data: {
+            name: item.product_title,
+            images: item.image ? [item.image] : [],
+          },
+          unit_amount: item.price, // already in cents from Shopify
+        },
+        quantity: item.quantity,
+      }));
+
+      const session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        payment_method_types: ["card"],
+        line_items: lineItems,
+        allow_promotion_codes: true,
+        success_url: `${process.env.NEXT_PUBLIC_URL}/success`,
+        cancel_url: `${process.env.NEXT_PUBLIC_URL}/cancel`,
+      });
+
+      return NextResponse.json({ url: session.url }, { headers: CORS_HEADERS });
+    }
+
+    // ✅ Package-based flow (from your Next.js storefront)
+    const { email, name, packageId } = body;
+
+    if (!email || !name || !packageId) {
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 },
+        { status: 400, headers: CORS_HEADERS },
       );
     }
 
-    const product = await getShopifyProduct(productId);
-    if (!product) {
-      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    const PACKAGES: Record<string, { priceId: string; name: string }> = {
+      "dog-food": {
+        priceId: "price_1TPit7235n3eBgYvd7Oi0vlA",
+        name: "Dog Food",
+      },
+      "cat-food": {
+        priceId: "price_1TPiP5235n3eBgYvgTHOesdy",
+        name: "Cat Food",
+      },
+      perfume: { priceId: "price_1TPiOH235n3eBgYvoly8K2Pa", name: "Perfume" },
+    };
+
+    const pkg = PACKAGES[packageId];
+    if (!pkg) {
+      return NextResponse.json(
+        { error: "Invalid package" },
+        { status: 400, headers: CORS_HEADERS },
+      );
     }
 
-    // Pick the right variant (or default to first)
-    const variant = variantId
-      ? product.variants.find((v: any) => v.id === variantId)
-      : product.variants[0];
-
-    if (!variant) {
-      return NextResponse.json({ error: "Variant not found" }, { status: 404 });
-    }
+    const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
       customer_email: email,
-      line_items: [
-        {
-          price_data: {
-            currency: "usd", // or pull from your Shopify store currency
-            unit_amount: Math.round(parseFloat(variant.price) * 100), // Shopify price is a string like "29.99"
-            product_data: {
-              name: product.title,
-              description:
-                variant.title !== "Default Title" ? variant.title : undefined,
-              images: product.image ? [product.image.src] : [],
-            },
-          },
-          quantity: 1,
-        },
-      ],
+      line_items: [{ price: pkg.priceId, quantity: 1 }],
       allow_promotion_codes: true,
-      success_url: "http://localhost:3000/success",
-      cancel_url: "http://localhost:3000/failed",
+      success_url: `${baseUrl}/success`,
+      cancel_url: `${baseUrl}/cancel`,
       metadata: {
         customerName: name,
         customerEmail: email,
-        shopifyProductId: productId,
-        shopifyVariantId: variant.id,
+        packageId,
+        packageName: pkg.name,
       },
     });
 
-    return NextResponse.json({ url: session.url });
+    return NextResponse.json({ url: session.url }, { headers: CORS_HEADERS });
   } catch (err) {
     console.error("Checkout error:", err);
-    return NextResponse.json({ error: "Checkout failed" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Checkout failed" },
+      { status: 500, headers: CORS_HEADERS },
+    );
   }
 }
