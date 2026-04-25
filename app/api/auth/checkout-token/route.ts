@@ -1,71 +1,23 @@
 // app/api/auth/checkout-token/route.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// Called by the Shopify checkout button (liquid snippet).
-// 1. Verifies the request came from YOUR Shopify store (HMAC check)
-// 2. Issues a short-lived signed JWT with cart + customer data
-// 3. Returns { token } — Shopify JS redirects to /checkout?token=...
-// ─────────────────────────────────────────────────────────────────────────────
 
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac, timingSafeEqual } from "crypto";
 import { signCheckoutToken, type CartItem, type CustomerInfo } from "@/app/lib/checkout-token";
+
 // ─── CORS — allow all origins ─────────────────────────────────────────────────
 
-const ALLOWED_SHOP = process.env.SHOPIFY_STORE_DOMAIN!; // e.g. "yourstore.myshopify.com"
-
-function corsHeaders(_origin: string | null) {
+function corsHeaders() {
   return {
-    "Access-Control-Allow-Origin":  "*",
+    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   };
 }
 
-export async function OPTIONS(request: NextRequest) {
+export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
-    headers: corsHeaders(request.headers.get("origin")),
+    headers: corsHeaders(),
   });
-}
-
-// ─── HMAC verification ────────────────────────────────────────────────────────
-// We verify the request is genuinely from your Shopify store by checking an
-// HMAC the Liquid snippet computes using your Shopify app's shared secret.
-//
-// In your liquid snippet, add this before the fetch():
-//   const hmacPayload = `${payload.shop}:${payload.timestamp}:${payload.total}`;
-//   // NOTE: HMAC must be computed server-side (Shopify App Proxy) or
-//   // you can skip HMAC and rely on the ALLOWED_SHOP domain check + HTTPS.
-//   // See note below about the two verification strategies.
-
-function verifyShopifyHmac(
-  shop: string,
-  timestamp: number,
-  total: number,
-  receivedHmac: string | undefined,
-): boolean {
-  const sharedSecret = process.env.SHOPIFY_API_SECRET!;
-
-  // Replay attack protection — reject requests older than 5 minutes
-  const ageSeconds = Math.floor(Date.now() / 1000) - timestamp;
-  if (ageSeconds > 300 || ageSeconds < -30) return false;
-
-  // If no HMAC provided (guest or simplified flow), only enforce shop domain
-  // Set REQUIRE_SHOPIFY_HMAC=true in env to make HMAC mandatory
-  if (!receivedHmac) {
-    return process.env.REQUIRE_SHOPIFY_HMAC !== "true";
-  }
-
-  const message = `${shop}:${timestamp}:${total}`;
-  const expected = createHmac("sha256", sharedSecret)
-    .update(message)
-    .digest("hex");
-
-  try {
-    return timingSafeEqual(Buffer.from(expected), Buffer.from(receivedHmac));
-  } catch {
-    return false;
-  }
 }
 
 // ─── Request body shape ───────────────────────────────────────────────────────
@@ -77,19 +29,18 @@ interface CheckoutTokenRequest {
   customer: CustomerInfo;
   shop: string;
   timestamp: number;
-  hmac?: string;       // optional — see verifyShopifyHmac above
+  hmac?: string;
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  const origin = request.headers.get("origin");
-  const headers = corsHeaders(origin);
+  const headers = corsHeaders();
 
   try {
     const body: CheckoutTokenRequest = await request.json();
 
-    const { items, currency, total, customer, shop, timestamp, hmac } = body;
+    const { items, currency, total, customer, shop, timestamp } = body;
 
     // 1. Validate required fields
     if (!items?.length || !currency || !shop || !timestamp) {
@@ -99,16 +50,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Verify the request genuinely came from your Shopify store
-    if (!verifyShopifyHmac(shop, timestamp, total, hmac)) {
-      console.warn("HMAC verification failed for shop:", shop);
+    // 2. Replay attack protection — reject requests older than 5 minutes
+    const ageSeconds = Math.floor(Date.now() / 1000) - timestamp;
+    if (ageSeconds > 300 || ageSeconds < -30) {
       return NextResponse.json(
-        { error: "Unauthorized" },
+        { error: "Request expired" },
         { status: 401, headers },
       );
     }
 
-    // 3. Sanitize customer — ensure no XSS / injection in stored values
+    // NOTE: HMAC verification skipped — no hmac is sent from the Liquid snippet.
+    // Re-enable once you add server-side HMAC signing to your Shopify App Proxy.
+
+    // 3. Sanitize customer
     const safeCustomer: CustomerInfo = {
       id:      customer?.id      || "",
       name:    customer?.name    || "",
@@ -119,7 +73,7 @@ export async function POST(request: NextRequest) {
       country: customer?.country || "AE",
     };
 
-    // 4. Sign the JWT (15 min expiry)
+    // 4. Sign the JWT
     const token = await signCheckoutToken({
       items,
       currency,
@@ -137,10 +91,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ token }, { headers });
 
   } catch (err: unknown) {
+    // Expose real error message so you can diagnose from the browser/network tab
     const message = err instanceof Error ? err.message : "Token generation failed";
     console.error("checkout-token error:", message);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: message },
       { status: 500, headers },
     );
   }
