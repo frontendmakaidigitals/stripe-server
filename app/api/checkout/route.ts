@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
- 
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 export async function OPTIONS() {
@@ -41,8 +40,14 @@ export async function POST(request: NextRequest) {
       customer_email: email,
       line_items: [{ price: pkg.priceId, quantity: 1 }],
       allow_promotion_codes: true, // ← Stripe shows a coupon field natively
-      success_url: "http://localhost:3000/success",
-      cancel_url: "http://localhost:3000/failed",
+      success_url:
+        process.env.PRODUCTOIN === "true"
+          ? "process.env.NEXT_PUBLIC_PROD_URL + '/success'"
+          : "http://localhost:3000/success",
+      cancel_url:
+        process.env.PRODUCTOIN === "true"
+          ? "process.env.NEXT_PUBLIC_PROD_URL + '/failed'"
+          : "http://localhost:3000/failed",
       metadata: {
         customerName: name,
         customerEmail: email,
