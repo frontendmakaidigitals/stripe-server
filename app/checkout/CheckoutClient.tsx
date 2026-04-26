@@ -1,12 +1,12 @@
 "use client";
 // app/checkout/CheckoutClient.tsx
-// ─────────────────────────────────────────────────────────────────────────────
-// Client component — receives pre-decoded payload from server page.
-// Handles: payment method selection, form pre-fill, Stripe redirect, COD order.
-// ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
-import type { CheckoutPayload, CustomerInfo } from "../lib/checkout-token";
+import type {
+  CheckoutPayload,
+  CustomerInfo,
+  ShopifyAddress,
+} from "../lib/checkout-token";
 
 type PaymentMethod = "stripe" | "cod" | null;
 type Step = "select" | "details" | "cod-success";
@@ -27,14 +27,22 @@ export default function CheckoutClient({
   const { items, currency, total, customer: prefill } = payload;
 
   const isLoggedIn = Boolean(prefill.email);
+  const savedAddresses = prefill.addresses ?? [];
+  const hasAddresses = isLoggedIn && savedAddresses.length > 0;
+  const defaultAddr =
+    savedAddresses.find((a: ShopifyAddress) => a.is_default) ??
+    savedAddresses[0];
 
   const [method, setMethod] = useState<PaymentMethod>(null);
   const [step, setStep] = useState<Step>("select");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [orderId, setOrderId] = useState("");
+  const [selectedAddressId, setSelectedId] = useState<string>(
+    defaultAddr?.id ?? "",
+  );
 
-  // Form state — pre-filled from JWT if logged in
+  // Guest form state
   const [customer, setCustomer] = useState<CustomerInfo>({
     id: prefill.id || "",
     name: prefill.name || "",
@@ -43,14 +51,34 @@ export default function CheckoutClient({
     address: prefill.address || "",
     city: prefill.city || "",
     country: prefill.country || "AE",
+    addresses: prefill.addresses ?? [],
   });
 
-  const allFilled =
+  const guestAllFilled =
     customer.name &&
     customer.email &&
     customer.phone &&
     customer.address &&
     customer.city;
+
+  // Build the customer object that actually goes to the order
+  function getOrderCustomer(): CustomerInfo {
+    if (hasAddresses) {
+      const addr: ShopifyAddress | undefined = savedAddresses.find(
+        (a: ShopifyAddress) => a.id === selectedAddressId,
+      );
+      if (addr) {
+        return {
+          ...customer,
+          phone: addr.phone || customer.phone,
+          address: [addr.address1, addr.address2].filter(Boolean).join(", "),
+          city: addr.city,
+          country: addr.country,
+        };
+      }
+    }
+    return customer;
+  }
 
   // ── Stripe ──────────────────────────────────────────────────────────────────
   async function startStripe() {
@@ -60,7 +88,7 @@ export default function CheckoutClient({
       const res = await fetch("/api/stripe/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items, currency, customer }),
+        body: JSON.stringify({ items, currency, customer: getOrderCustomer() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Stripe checkout failed");
@@ -79,7 +107,7 @@ export default function CheckoutClient({
       const res = await fetch("/api/orders/cod", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items, currency, customer }),
+        body: JSON.stringify({ items, currency, customer: getOrderCustomer() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Order failed");
@@ -92,33 +120,34 @@ export default function CheckoutClient({
     }
   }
 
-  // ── Continue from method selection ──────────────────────────────────────────
   function handleContinue() {
     if (!method) return;
-    // If logged in and all details present, skip the details form
-    if (isLoggedIn && allFilled) {
+    const readyToGo = hasAddresses
+      ? Boolean(selectedAddressId)
+      : Boolean(guestAllFilled);
+    if (readyToGo) {
       method === "stripe" ? startStripe() : placeCODOrder();
     } else {
       setStep("details");
     }
   }
 
-  // ── Submit details form ──────────────────────────────────────────────────────
   function handleDetailsSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!allFilled) return;
+    if (!guestAllFilled) return;
     method === "stripe" ? startStripe() : placeCODOrder();
   }
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  const selectedAddr = savedAddresses.find(
+    (a: ShopifyAddress) => a.id === selectedAddressId,
+  );
 
   return (
     <div style={s.page}>
-      {/* ── Left: Order summary ──────────────────────────────────────────── */}
+      {/* ── Sidebar: order summary ── */}
       <aside style={s.sidebar}>
         <div style={s.sidebarInner}>
           <p style={s.overline}>Your Order</p>
-
           <div style={s.itemList}>
             {items.map((item, i) => (
               <div key={i} style={s.item}>
@@ -139,14 +168,11 @@ export default function CheckoutClient({
               </div>
             ))}
           </div>
-
           <div style={s.hr} />
-
           <div style={s.totalRow}>
             <span style={s.totalLabel}>Total</span>
             <span style={s.totalAmt}>{fmt(total, currency)}</span>
           </div>
-
           {isLoggedIn && (
             <div style={s.loggedInBadge}>
               <span>👤</span>
@@ -156,15 +182,14 @@ export default function CheckoutClient({
         </div>
       </aside>
 
-      {/* ── Right: Checkout steps ────────────────────────────────────────── */}
+      {/* ── Main: checkout steps ── */}
       <main style={s.main}>
         <div style={s.mainInner}>
           <h1 style={s.heading}>Checkout</h1>
 
-          {/* ── Step: method selection + details ─────────────────────────── */}
           {(step === "select" || step === "details") && (
             <>
-              {/* Payment method cards */}
+              {/* Payment method */}
               <p style={s.stepLabel}>How would you like to pay?</p>
               <div style={s.methodGrid}>
                 {(["stripe", "cod"] as const).map((m) => (
@@ -198,39 +223,64 @@ export default function CheckoutClient({
                 ))}
               </div>
 
-              {/* Details form — shown when not fully pre-filled */}
-              {step === "details" && (
+              {/* ── Logged-in with saved addresses: address picker ── */}
+              {isLoggedIn && hasAddresses && step === "select" && (
+                <>
+                  <p style={s.stepLabel}>Deliver to</p>
+                  <div style={s.addressList}>
+                    {savedAddresses.map((addr: ShopifyAddress) => (
+                      <button
+                        key={addr.id}
+                        type="button"
+                        style={{
+                          ...s.addressCard,
+                          ...(selectedAddressId === addr.id
+                            ? s.addressCardActive
+                            : {}),
+                        }}
+                        onClick={() => setSelectedId(addr.id)}
+                      >
+                        <div style={s.addressRadio}>
+                          <div
+                            style={{
+                              ...s.radioInner,
+                              ...(selectedAddressId === addr.id
+                                ? s.radioInnerActive
+                                : {}),
+                            }}
+                          />
+                        </div>
+                        <div style={s.addressBody}>
+                          <p style={s.addressName}>
+                            {addr.name || customer.name}
+                            {addr.is_default && (
+                              <span style={s.defaultBadge}>Default</span>
+                            )}
+                          </p>
+                          <p style={s.addressLine}>
+                            {[addr.address1, addr.address2]
+                              .filter(Boolean)
+                              .join(", ")}
+                          </p>
+                          <p style={s.addressLine}>
+                            {addr.city}, {addr.country}
+                          </p>
+                          {addr.phone && (
+                            <p style={s.addressLine}>{addr.phone}</p>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* ── Logged-in but no saved addresses: show inline form ── */}
+              {isLoggedIn && !hasAddresses && step === "details" && (
                 <form onSubmit={handleDetailsSubmit} style={s.form}>
                   <p style={{ ...s.stepLabel, marginTop: 8 }}>
                     Delivery Details
                   </p>
-
-                  <Row>
-                    <Field label="Full Name *">
-                      <input
-                        style={s.input}
-                        required
-                        value={customer.name}
-                        onChange={(e) =>
-                          setCustomer((c) => ({ ...c, name: e.target.value }))
-                        }
-                        placeholder="Jane Doe"
-                      />
-                    </Field>
-                    <Field label="Email *">
-                      <input
-                        style={s.input}
-                        required
-                        type="email"
-                        value={customer.email}
-                        onChange={(e) =>
-                          setCustomer((c) => ({ ...c, email: e.target.value }))
-                        }
-                        placeholder="jane@example.com"
-                      />
-                    </Field>
-                  </Row>
-
                   <Row>
                     <Field label="Phone *">
                       <input
@@ -256,7 +306,6 @@ export default function CheckoutClient({
                       />
                     </Field>
                   </Row>
-
                   <Field label="Delivery Address *" full>
                     <input
                       style={s.input}
@@ -268,9 +317,7 @@ export default function CheckoutClient({
                       placeholder="Building, Street, Area"
                     />
                   </Field>
-
                   {error && <ErrorBox msg={error} />}
-
                   <button
                     type="submit"
                     style={{ ...s.cta, opacity: loading ? 0.6 : 1 }}
@@ -285,28 +332,108 @@ export default function CheckoutClient({
                 </form>
               )}
 
-              {/* CTA on method-select step */}
+              {/* ── Guest: full form ── */}
+              {!isLoggedIn && step === "details" && (
+                <form onSubmit={handleDetailsSubmit} style={s.form}>
+                  <p style={{ ...s.stepLabel, marginTop: 8 }}>
+                    Delivery Details
+                  </p>
+                  <Row>
+                    <Field label="Full Name *">
+                      <input
+                        style={s.input}
+                        required
+                        value={customer.name}
+                        onChange={(e) =>
+                          setCustomer((c) => ({ ...c, name: e.target.value }))
+                        }
+                        placeholder="Jane Doe"
+                      />
+                    </Field>
+                    <Field label="Email *">
+                      <input
+                        style={s.input}
+                        required
+                        type="email"
+                        value={customer.email}
+                        onChange={(e) =>
+                          setCustomer((c) => ({ ...c, email: e.target.value }))
+                        }
+                        placeholder="jane@example.com"
+                      />
+                    </Field>
+                  </Row>
+                  <Row>
+                    <Field label="Phone *">
+                      <input
+                        style={s.input}
+                        required
+                        type="tel"
+                        value={customer.phone}
+                        onChange={(e) =>
+                          setCustomer((c) => ({ ...c, phone: e.target.value }))
+                        }
+                        placeholder="+971 50 000 0000"
+                      />
+                    </Field>
+                    <Field label="City *">
+                      <input
+                        style={s.input}
+                        required
+                        value={customer.city}
+                        onChange={(e) =>
+                          setCustomer((c) => ({ ...c, city: e.target.value }))
+                        }
+                        placeholder="Dubai"
+                      />
+                    </Field>
+                  </Row>
+                  <Field label="Delivery Address *" full>
+                    <input
+                      style={s.input}
+                      required
+                      value={customer.address}
+                      onChange={(e) =>
+                        setCustomer((c) => ({ ...c, address: e.target.value }))
+                      }
+                      placeholder="Building, Street, Area"
+                    />
+                  </Field>
+                  {error && <ErrorBox msg={error} />}
+                  <button
+                    type="submit"
+                    style={{ ...s.cta, opacity: loading ? 0.6 : 1 }}
+                    disabled={loading}
+                  >
+                    {loading
+                      ? "Processing…"
+                      : method === "stripe"
+                        ? "Continue to Payment →"
+                        : "Place Order →"}
+                  </button>
+                </form>
+              )}
+
+              {/* CTA button */}
               {step === "select" && (
                 <>
                   {error && <ErrorBox msg={error} />}
-                  {/* If logged in and all info present, show what will be used */}
-                  {isLoggedIn && allFilled && method && (
+                  {/* Summary of selected address for logged-in users */}
+                  {isLoggedIn && hasAddresses && method && selectedAddr && (
                     <div style={s.prefillNote}>
                       <p style={s.prefillTitle}>Delivering to:</p>
                       <p style={s.prefillLine}>
-                        {customer.name} · {customer.email}
+                        {selectedAddr.name || customer.name} · {customer.email}
                       </p>
                       <p style={s.prefillLine}>
-                        {customer.address}, {customer.city}
+                        {[selectedAddr.address1, selectedAddr.address2]
+                          .filter(Boolean)
+                          .join(", ")}
+                        , {selectedAddr.city}
                       </p>
-                      <p style={s.prefillLine}>{customer.phone}</p>
-                      <button
-                        type="button"
-                        style={s.editBtn}
-                        onClick={() => setStep("details")}
-                      >
-                        Edit details
-                      </button>
+                      <p style={s.prefillLine}>
+                        {selectedAddr.phone || customer.phone}
+                      </p>
                     </div>
                   )}
                   <button
@@ -327,21 +454,21 @@ export default function CheckoutClient({
             </>
           )}
 
-          {/* ── COD success ──────────────────────────────────────────────── */}
+          {/* ── COD success ── */}
           {step === "cod-success" && (
             <div style={s.successBox}>
               <div style={s.successIcon}>✅</div>
               <h2 style={s.successTitle}>Order Placed!</h2>
               <p style={s.successBody}>
                 Your order <strong>{orderId}</strong> has been received. Our
-                team will contact you on <strong>{customer.phone}</strong> to
-                confirm delivery.
+                team will contact you on{" "}
+                <strong>{getOrderCustomer().phone}</strong> to confirm delivery.
               </p>
               <p style={s.successSub}>
                 Confirmation sent to <strong>{customer.email}</strong>.
               </p>
               <a
-                href={`https://${process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN}`}
+                href={`https://${process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN || "perfumeoasis.ae"}`}
                 style={s.backLink}
               >
                 ← Back to Store
@@ -354,7 +481,7 @@ export default function CheckoutClient({
   );
 }
 
-// ─── Small layout helpers ──────────────────────────────────────────────────────
+// ─── Layout helpers ───────────────────────────────────────────────────────────
 
 function Row({ children }: { children: React.ReactNode }) {
   return <div style={{ display: "flex", gap: 16 }}>{children}</div>;
@@ -539,12 +666,78 @@ const s: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     fontWeight: 800,
   },
+  // Address picker
+  addressList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    marginBottom: 24,
+  },
+  addressCard: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 14,
+    padding: "16px 18px",
+    border: "1.5px solid #e5e5e5",
+    borderRadius: 12,
+    background: "#fff",
+    cursor: "pointer",
+    textAlign: "left",
+    width: "100%",
+    transition: "all 0.15s",
+  },
+  addressCardActive: {
+    border: "1.5px solid #111",
+    boxShadow: "0 0 0 3px rgba(0,0,0,0.07)",
+  },
+  addressRadio: {
+    marginTop: 3,
+    width: 18,
+    height: 18,
+    borderRadius: "50%",
+    border: "2px solid #ccc",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  radioInner: {
+    width: 8,
+    height: 8,
+    borderRadius: "50%",
+    background: "transparent",
+    transition: "background 0.15s",
+  },
+  radioInnerActive: { background: "#111" },
+  addressBody: { flex: 1 },
+  addressName: {
+    margin: "0 0 4px",
+    fontSize: 14,
+    fontWeight: 700,
+    color: "#111",
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+  addressLine: { margin: "1px 0", fontSize: 13, color: "#555" },
+  defaultBadge: {
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+    background: "#f0f0f0",
+    color: "#666",
+    padding: "2px 7px",
+    borderRadius: 4,
+  },
+  // Summary / prefill
   prefillNote: {
     padding: "16px 18px",
     background: "#fff",
     border: "1.5px solid #e5e5e5",
     borderRadius: 10,
     marginBottom: 4,
+    marginTop: 8,
   },
   prefillTitle: {
     margin: "0 0 6px",
@@ -555,17 +748,7 @@ const s: Record<string, React.CSSProperties> = {
     textTransform: "uppercase",
   },
   prefillLine: { margin: "2px 0", fontSize: 14, color: "#333" },
-  editBtn: {
-    marginTop: 10,
-    background: "none",
-    border: "none",
-    padding: 0,
-    fontSize: 13,
-    color: "#111",
-    fontWeight: 600,
-    cursor: "pointer",
-    textDecoration: "underline",
-  },
+  // Form
   form: { display: "flex", flexDirection: "column", gap: 14 },
   input: {
     padding: "11px 13px",
@@ -592,6 +775,7 @@ const s: Record<string, React.CSSProperties> = {
     fontFamily: "inherit",
     letterSpacing: "-0.01em",
   },
+  // Success
   successBox: {
     textAlign: "center",
     padding: "52px 36px",

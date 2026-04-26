@@ -8,7 +8,17 @@ export interface CartItem {
   variant_id?: string;
   sku?: string;
 }
-
+export interface ShopifyAddress {
+  id: string;
+  name: string;
+  phone: string;
+  address1: string;
+  address2?: string;
+  city: string;
+  country: string;
+  is_default: boolean;
+}
+    
 export interface CustomerInfo {
   id?: string;
   name: string;
@@ -17,6 +27,7 @@ export interface CustomerInfo {
   address: string;
   city: string;
   country: string;
+  addresses: ShopifyAddress[];
 }
 
 export interface CheckoutPayload {
