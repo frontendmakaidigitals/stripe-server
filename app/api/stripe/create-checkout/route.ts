@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
       // ── Store everything the webhook needs to create the Shopify order ──
       // Stripe metadata values must be strings and total < 8KB
       metadata: {
-        customer: JSON.stringify(customer || {}),
+        customer: JSON.stringify((() => { const { addresses, ...rest } = customer || {}; return rest; })()),
         items:    JSON.stringify(items),
         currency,
       },
