@@ -21,8 +21,8 @@ async function createShopifyOrder(
   customer: CustomerInfo,
   currency: string,
 ) {
-  const domain = process.env.SHOPIFY_STORE_DOMAIN!;   // "yourstore.myshopify.com"
-  const token  = process.env.SHOPIFY_ADMIN_TOKEN!;    // shpat_xxx
+  const domain = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN!;   // "yourstore.myshopify.com"
+  const token  = process.env.SHOPIFY_ACCESS_TOKEN!;    // shpat_xxx
 
   const [firstName, ...rest] = customer.name.trim().split(" ");
   const lastName = rest.join(" ") || "-";

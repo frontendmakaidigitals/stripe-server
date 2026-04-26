@@ -28,8 +28,8 @@ async function createShopifyOrder(
   currency: string,
   stripeSessionId: string,
 ): Promise<string> {
-  const domain = process.env.SHOPIFY_STORE_DOMAIN!;
-  const token  = process.env.SHOPIFY_ADMIN_TOKEN!;
+  const domain = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN!;
+  const token  = process.env.SHOPIFY_ACCESS_TOKEN!;
 
   const [firstName, ...rest] = (customer.name || "Guest").trim().split(" ");
   const lastName = rest.join(" ") || "-";
