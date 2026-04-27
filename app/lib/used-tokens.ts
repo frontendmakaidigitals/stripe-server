@@ -6,7 +6,7 @@ const redis = new Redis({
 });
 
 export async function markTokenUsed(token: string) {
-  // Expire after 7 days — tokens don't live forever anyway
+
   await redis.set(`used_token:${token}`, "1", { ex: 60 * 60 * 24 * 7 });
 }
 

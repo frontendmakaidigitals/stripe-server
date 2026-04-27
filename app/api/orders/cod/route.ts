@@ -37,7 +37,7 @@ async function createShopifyOrder(
       ? { variant_id: parseInt(item.variant_id, 10), quantity: item.quantity }
       : {
           title:              item.product_title,
-          price:              (item.price / 100).toFixed(2),
+          price:              (item.price),
           quantity:           item.quantity,
           requires_shipping:  true,
           taxable:            false,
