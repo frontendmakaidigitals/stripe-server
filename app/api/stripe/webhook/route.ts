@@ -1,13 +1,8 @@
-// app/api/stripe/webhook/route.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// Listens for Stripe payment events.
-// On successful payment → creates a real Shopify order (inventory deducted).
-// ─────────────────────────────────────────────────────────────────────────────
 
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import type { CustomerInfo, CartItem } from "@/app/lib/checkout-token";
-
+import { markTokenUsed } from "@/app/lib/used-tokens";
 export const runtime = "nodejs";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -133,6 +128,8 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
   try {
     const orderName = await createShopifyOrder(items, customer, currency, session.id);
     console.log(`✅ Shopify order ${orderName} created for Stripe session ${session.id}`);
+    const token = meta.token;
+if (token) markTokenUsed(token);
   } catch (err) {
     // Log but don't re-throw — payment already succeeded, don't panic
     console.error("Failed to create Shopify order after Stripe payment:", err);

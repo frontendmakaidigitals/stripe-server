@@ -1,10 +1,4 @@
-// app/api/orders/cod/route.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// Creates a real Shopify order for Cash on Delivery.
-// Uses Draft Orders API → complete with payment_pending=true.
-// Inventory is deducted and fulfillment is triggered in Shopify.
-// ─────────────────────────────────────────────────────────────────────────────
-
+import { markTokenUsed } from "@/app/lib/used-tokens";
 import { NextRequest, NextResponse } from "next/server";
 import type { CartItem, CustomerInfo } from "@/app/lib/checkout-token";
 
@@ -12,6 +6,7 @@ interface CODRequest {
   items: CartItem[];
   currency: string;
   customer: CustomerInfo;
+  token?: string;
 }
 
 // ─── Create Shopify order ─────────────────────────────────────────────────────
@@ -127,7 +122,8 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await createShopifyOrder(items, customer, currency);
-
+    const token = request.headers.get("x-checkout-token") || body.token;
+    if (token) markTokenUsed(token)
     return NextResponse.json({
       success:  true,
       orderId:  result.orderId,    // e.g. "#1042" — shown to customer

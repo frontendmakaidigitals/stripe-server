@@ -1,5 +1,4 @@
-// app/checkout/page.tsx
-
+import { isTokenUsed } from "../lib/used-tokens";
 import {
   verifyCheckoutToken,
   type CheckoutPayload,
@@ -16,7 +15,11 @@ export default async function CheckoutPage({ searchParams }: PageProps) {
   if (!token) {
     return <TokenError message="No checkout session found." />;
   }
-
+  if (await isTokenUsed(token)) {
+    return (
+      <TokenError message="This order has already been completed. Please return to the store." />
+    );
+  }
   let payload: CheckoutPayload;
   try {
     payload = await verifyCheckoutToken(token);

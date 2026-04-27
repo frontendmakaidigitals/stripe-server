@@ -88,7 +88,12 @@ export default function CheckoutClient({
       const res = await fetch("/api/stripe/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items, currency, customer: getOrderCustomer() }),
+        body: JSON.stringify({
+          items,
+          currency,
+          customer: getOrderCustomer(),
+          token: payload.token,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Stripe checkout failed");
@@ -107,7 +112,12 @@ export default function CheckoutClient({
       const res = await fetch("/api/orders/cod", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items, currency, customer: getOrderCustomer() }),
+        body: JSON.stringify({
+          items,
+          currency,
+          customer: getOrderCustomer(),
+          token: payload.token,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Order failed");

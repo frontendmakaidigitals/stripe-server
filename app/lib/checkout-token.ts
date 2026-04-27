@@ -35,7 +35,8 @@ export interface CheckoutPayload {
   currency: string;
   total: number;       // in cents
   customer: CustomerInfo;
-  shop: string;        // e.g. "yourstore.myshopify.com"
+  shop: string;     
+  token?:string   // e.g. "yourstore.myshopify.com"
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
