@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
             name:   item.product_title,
             images: item.image ? [item.image] : [],
           },
-          unit_amount: item.price, // already in cents
+          unit_amount: Math.round(item.price * 100),
         },
         quantity: item.quantity,
       })),
