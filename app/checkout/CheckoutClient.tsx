@@ -11,12 +11,12 @@ import type {
 type PaymentMethod = "stripe" | "cod" | null;
 type Step = "select" | "details" | "cod-success";
 
-function fmt(cents: number, currency: string) {
+function fmt(amount: number, currency: string) {
   return new Intl.NumberFormat("en-AE", {
     style: "currency",
     currency,
     minimumFractionDigits: 2,
-  }).format(cents / 100);
+  }).format(amount); // ✅ FIXED
 }
 
 export default function CheckoutClient({
