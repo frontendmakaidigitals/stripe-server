@@ -497,7 +497,7 @@ export default function CheckoutClient({
                         Enter your address to see shipping options.
                       </p>
                     ) : (
-                      <div className="flex flex-col divide-y border rounded-md overflow-hidden">
+                      <div className="flex flex-col divide-y rounded-md overflow-hidden">
                         {shippingRates.map((rate) => {
                           const isSelected =
                             selectedRate?.handle === rate.handle;
@@ -519,7 +519,7 @@ export default function CheckoutClient({
                                 </span>
 
                                 {rate.estimatedDays && (
-                                  <span className="text-xs text-neutral-500 mt-1">
+                                  <span className=" text-neutral-500 mt-1">
                                     {rate.estimatedDays}
                                   </span>
                                 )}
