@@ -497,26 +497,45 @@ export default function CheckoutClient({
                         Enter your address to see shipping options.
                       </p>
                     ) : (
-                      <div className="flex flex-col gap-2">
-                        {shippingRates.map((rate) => (
-                          <label
-                            key={rate.handle}
-                            className={`flex items-center gap-3 px-4 py-3 border rounded-md cursor-pointer transition-colors ${
-                              selectedRate?.handle === rate.handle
-                                ? "border-[#1a1a1a] bg-indigo-500/8"
-                                : "border-[#d4d4d4] bg-white hover:bg-[#fafafa]"
-                            }`}
-                          >
-                            <span className="flex-1 text-sm font-medium">
-                              {rate.title}
-                              {rate.estimatedDays && (
-                                <span className="block text-xs text-neutral-500 font-normal mt-0.5">
-                                  {rate.estimatedDays}
+                      <div className="flex flex-col divide-y border rounded-md overflow-hidden">
+                        {shippingRates.map((rate) => {
+                          const isSelected =
+                            selectedRate?.handle === rate.handle;
+
+                          return (
+                            <label
+                              key={rate.handle}
+                              className={`flex items-start justify-between gap-4 px-4 py-4 cursor-pointer transition ${
+                                isSelected
+                                  ? "bg-[#f5f7ff]"
+                                  : "bg-white hover:bg-[#fafafa]"
+                              }`}
+                            >
+                              {/* LEFT CONTENT */}
+                              <div className="flex flex-col text-sm">
+                                <span className="font-medium text-[#1a1a1a]">
+                                  {rate.title} · {rate.price.currencyCode}{" "}
+                                  {rate.price.amount}
                                 </span>
-                              )}
-                            </span>
-                          </label>
-                        ))}
+
+                                {rate.estimatedDays && (
+                                  <span className="text-xs text-neutral-500 mt-1">
+                                    {rate.estimatedDays}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* RIGHT RADIO */}
+                              <input
+                                type="radio"
+                                name="shipping"
+                                checked={isSelected}
+                                onChange={() => setSelectedRate(rate)}
+                                className="mt-1 w-4 h-4 accent-[#1a1a1a]"
+                              />
+                            </label>
+                          );
+                        })}
                       </div>
                     )}
                   </section>
