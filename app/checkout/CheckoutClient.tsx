@@ -97,8 +97,24 @@ export default function CheckoutClient({
     }
   }
   useEffect(() => {
-    const addr = getOrderCustomer();
-    fetchShippingRates(addr);
+    if (hasAddresses && !useNewAddress && selectedAddressId) {
+      // Build addr directly from savedAddresses instead of calling getOrderCustomer()
+      const addr = savedAddresses.find(
+        (a: ShopifyAddress) => a.id === selectedAddressId,
+      );
+      if (addr) {
+        fetchShippingRates({
+          ...customer,
+          phone: addr.phone || customer.phone,
+          address: [addr.address1, addr.address2].filter(Boolean).join(", "),
+          city: addr.city,
+          country: addr.country,
+        });
+      }
+    } else {
+      // Guest / new address form
+      fetchShippingRates(customer);
+    }
   }, [selectedAddressId, useNewAddress, customer.city, customer.country]);
   function getOrderCustomer(): CustomerInfo {
     if (hasAddresses && !useNewAddress) {
@@ -130,7 +146,8 @@ export default function CheckoutClient({
           currency,
           customer: getOrderCustomer(),
           token: payload.token,
-          shipping: SHIPPING_RATE,
+          shipping: shippingCost,
+          shippingHandle: selectedRate?.handle,
         }),
       });
       const data = await res.json();
@@ -154,7 +171,8 @@ export default function CheckoutClient({
           currency,
           customer: getOrderCustomer(),
           token: payload.token,
-          shipping: SHIPPING_RATE,
+          shipping: shippingCost,
+          shippingHandle: selectedRate?.handle,
         }),
       });
       const data = await res.json();
@@ -666,7 +684,12 @@ export default function CheckoutClient({
               <div className="flex justify-between text-sm text-[#555]">
                 <span>Shipping</span>
                 <span className="font-medium text-[#1a1a1a]">
-                  {fmt(SHIPPING_RATE, currency)}
+                  {ratesLoading
+                    ? "Calculating…"
+                    : fmt(
+                        shippingCost,
+                        selectedRate?.price.currencyCode ?? currency,
+                      )}
                 </span>
               </div>
               <div className="flex justify-between items-baseline border-t border-[#e0e0e0] pt-4 mt-1">
