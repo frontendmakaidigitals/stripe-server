@@ -70,6 +70,7 @@ export default function CheckoutClient({
 
   const grandTotal = total + shippingCost;
   async function fetchShippingRates(addr: CustomerInfo) {
+    console.log("fetchShippingRates called with:", addr);
     if (!addr.address || !addr.city || !addr.country) return;
     setRatesLoading(true);
     try {
@@ -90,6 +91,7 @@ export default function CheckoutClient({
         }),
       });
       const data = await res.json();
+      console.log("Shipping API response:", data); 
       setShippingRates(data.rates ?? []);
       setSelectedRate(data.rates?.[0] ?? null); // auto-select first
     } finally {
