@@ -17,7 +17,12 @@ const COUNTRY_NAMES: Record<string, string> = {
 export async function POST(req: NextRequest) {
   const { address } = await req.json();
   const countryName = COUNTRY_NAMES[address.country] ?? address.country;
-
+  console.log("Shipping request:", { 
+    address1: address.address1, 
+    city: address.city, 
+    country: countryName,  // should log "India"
+    lineItems: address.lineItems 
+  });
   const query = `
     mutation checkoutCreate($input: CheckoutCreateInput!) {
       checkoutCreate(input: $input) {
@@ -66,6 +71,13 @@ export async function POST(req: NextRequest) {
   const data = await res.json();
   const rates =
     data?.data?.checkoutCreate?.checkout?.availableShippingRates?.shippingRates ?? [];
-
+ console.log("Shopify full response:", JSON.stringify(data, null, 2));
+  
+  const checkout = data?.data?.checkoutCreate?.checkout;
+  const errors = data?.data?.checkoutCreate?.checkoutUserErrors;
+  
+  console.log("Checkout errors:", errors);
+  console.log("Rates ready:", checkout?.availableShippingRates?.ready);
+  console.log("Raw rates:", checkout?.availableShippingRates?.shippingRates);
   return NextResponse.json({ rates });
 }
