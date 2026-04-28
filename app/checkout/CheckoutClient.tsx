@@ -1,7 +1,7 @@
 "use client";
 // app/checkout/CheckoutClient.tsx
 import Header from "../ui/header";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type {
   CheckoutPayload,
   CustomerInfo,
@@ -12,7 +12,11 @@ type PaymentMethod = "stripe" | "cod" | null;
 type Step = "contact" | "shipping" | "payment" | "cod-success";
 
 const SHIPPING_RATE = 35; // AED – replace with dynamic value if needed
-
+type ShippingRate = {
+  handle: string;
+  title: string;
+  price: { amount: string; currencyCode: string };
+};
 function fmt(amount: number, currency: string) {
   return new Intl.NumberFormat("en-AE", {
     style: "currency",
@@ -40,6 +44,10 @@ export default function CheckoutClient({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [orderId, setOrderId] = useState("");
+  const [shippingRates, setShippingRates] = useState<ShippingRate[]>([]);
+  const [selectedRate, setSelectedRate] = useState<ShippingRate | null>(null);
+  const [ratesLoading, setRatesLoading] = useState(false);
+
   const [selectedAddressId, setSelectedId] = useState<string>(
     defaultAddr?.id ?? "",
   );
@@ -56,8 +64,42 @@ export default function CheckoutClient({
     addresses: prefill.addresses ?? [],
   });
 
-  const grandTotal = total + SHIPPING_RATE;
+  const shippingCost = selectedRate
+    ? parseFloat(selectedRate.price.amount)
+    : SHIPPING_RATE;
 
+  const grandTotal = total + shippingCost;
+  async function fetchShippingRates(addr: CustomerInfo) {
+    if (!addr.address || !addr.city || !addr.country) return;
+    setRatesLoading(true);
+    try {
+      const res = await fetch("/api/shipping/rates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          address: {
+            address1: addr.address,
+            city: addr.city,
+            country: addr.country,
+            phone: addr.phone,
+            lineItems: items.map((i) => ({
+              variantId: i.variant_id,
+              quantity: i.quantity,
+            })),
+          },
+        }),
+      });
+      const data = await res.json();
+      setShippingRates(data.rates ?? []);
+      setSelectedRate(data.rates?.[0] ?? null); // auto-select first
+    } finally {
+      setRatesLoading(false);
+    }
+  }
+  useEffect(() => {
+    const addr = getOrderCustomer();
+    fetchShippingRates(addr);
+  }, [selectedAddressId, useNewAddress, customer.city, customer.country]);
   function getOrderCustomer(): CustomerInfo {
     if (hasAddresses && !useNewAddress) {
       const addr = savedAddresses.find(
@@ -268,21 +310,12 @@ export default function CheckoutClient({
                                   {addr.city}, {addr.country}
                                 </p>
 
-                                {addr.is_default && (
-                                  <span className="text-xs bg-stone-500 text-gray-50 px-2 py-1 rounded-full font-semibold  tracking-wide">
+                                {addr.id === defaultAddr?.id && (
+                                  <span className="text-xs bg-stone-500 text-gray-50 px-2 py-1 rounded-full font-semibold tracking-wide">
                                     Default
                                   </span>
                                 )}
                               </div>
-                              <button
-                                type="button"
-                                className="text-[#999] text-base mt-0.5"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                }}
-                              >
-                                ⋮
-                              </button>
                             </label>
                           ))}
                         </div>
@@ -433,17 +466,46 @@ export default function CheckoutClient({
                     <p className="text-neutral-600 text-sm mb-3">
                       Shipping method
                     </p>
-                    <div className="">
-                      <span className="text-sm font-medium">
-                        Standard&nbsp;.&nbsp;
-                      </span>
-                      <span className="text-sm font-semibold">
-                        {fmt(SHIPPING_RATE, currency)}
-                      </span>
-                      <span className="text-sm text-neutral-500 mt-.5 block font-medium">
-                        14 business days
-                      </span>
-                    </div>
+
+                    {ratesLoading ? (
+                      <p className="text-sm text-gray-400">
+                        Fetching shipping rates…
+                      </p>
+                    ) : shippingRates.length === 0 ? (
+                      <p className="text-sm text-gray-400">
+                        Enter your address to see shipping options.
+                      </p>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {shippingRates.map((rate) => (
+                          <label
+                            key={rate.handle}
+                            className={`flex items-center gap-3 px-4 py-3 border rounded-md cursor-pointer transition-colors ${
+                              selectedRate?.handle === rate.handle
+                                ? "border-[#1a1a1a] bg-indigo-500/8"
+                                : "border-[#d4d4d4] bg-white hover:bg-[#fafafa]"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="shipping"
+                              checked={selectedRate?.handle === rate.handle}
+                              onChange={() => setSelectedRate(rate)}
+                              className="w-4 h-4 accent-[#1a1a1a]"
+                            />
+                            <span className="flex-1 text-sm font-medium">
+                              {rate.title}
+                            </span>
+                            <span className="text-sm font-semibold">
+                              {fmt(
+                                parseFloat(rate.price.amount),
+                                rate.price.currencyCode,
+                              )}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
                   </section>
 
                   {/* ── PAYMENT ── */}
