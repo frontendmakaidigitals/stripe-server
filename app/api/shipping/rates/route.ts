@@ -26,45 +26,44 @@ export async function POST(req: NextRequest) {
   };
 
   // Step 1 — Create a cart
-  const createCart = await fetch(
-    `https://${domain}/api/2024-10/graphql.json`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        query: `
-          mutation cartCreate($input: CartInput!) {
-            cartCreate(input: $input) {
-              cart { id }
-              userErrors { field message }
-            }
+  const createCart = await fetch(`https://${domain}/api/2024-10/graphql.json`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      query: `
+        mutation cartCreate($input: CartInput!) {
+          cartCreate(input: $input) {
+            cart { id }
+            userErrors { field message }
           }
-        `,
-        variables: {
-          input: {
-            lines: address.lineItems.map((item: { variantId: string; quantity: number }) => ({
+        }
+      `,
+      variables: {
+        input: {
+          lines: address.lineItems.map(
+            (item: { variantId: string; quantity: number }) => ({
               merchandiseId: item.variantId.startsWith("gid://")
                 ? item.variantId
                 : `gid://shopify/ProductVariant/${item.variantId}`,
               quantity: item.quantity,
-            })),
-            buyerIdentity: {
-              deliveryAddressPreferences: [
-                {
-                  deliveryAddress: {
-                    address1: address.address1,
-                    city: address.city,
-                    country: countryName,
-                    phone: address.phone,
-                  },
+            })
+          ),
+          buyerIdentity: {
+            deliveryAddressPreferences: [
+              {
+                deliveryAddress: {
+                  address1: address.address1,
+                  city: address.city,
+                  country: countryName,
+                  phone: address.phone,
                 },
-              ],
-            },
+              },
+            ],
           },
         },
-      }),
-    }
-  );
+      },
+    }),
+  });
 
   const cartData = await createCart.json();
   console.log("Cart create response:", JSON.stringify(cartData, null, 2));
@@ -75,37 +74,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ rates: [] });
   }
 
-  // Step 2 — Fetch delivery options for the cart
-  const deliveryQuery = await fetch(
-    `https://${domain}/api/2024-10/graphql.json`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        query: `
-          query getDeliveryOptions($cartId: ID!) {
-            cart(id: $cartId) {
-              deliveryGroups {
-                edges {
-                  node {
-                    deliveryOptions {
-                      handle
-                      title
-                      estimatedCost {
-                        amount
-                        currencyCode
-                      }
+  // Step 2 — Fetch delivery options  👇 added first: 10
+  const deliveryQuery = await fetch(`https://${domain}/api/2024-10/graphql.json`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      query: `
+        query getDeliveryOptions($cartId: ID!) {
+          cart(id: $cartId) {
+            deliveryGroups(first: 10) {
+              edges {
+                node {
+                  deliveryOptions {
+                    handle
+                    title
+                    estimatedCost {
+                      amount
+                      currencyCode
                     }
                   }
                 }
               }
             }
           }
-        `,
-        variables: { cartId },
-      }),
-    }
-  );
+        }
+      `,
+      variables: { cartId },
+    }),
+  });
 
   const deliveryData = await deliveryQuery.json();
   console.log("Delivery options response:", JSON.stringify(deliveryData, null, 2));
