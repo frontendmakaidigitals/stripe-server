@@ -1,4 +1,3 @@
-// app/api/discount/validate/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
@@ -17,7 +16,6 @@ export async function POST(req: NextRequest) {
     }
   );
 
-  // 👇 Add this
   const text = await res.text();
   console.log("Discount lookup status:", res.status);
   console.log("Discount lookup body:", text);
@@ -26,30 +24,48 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ valid: false });
   }
 
-  const discountData = await res.json();
+  // 👇 Parse from text instead of calling res.json() again
+  const discountData = JSON.parse(text);
   const discountCode = discountData?.discount_code;
 
-  if (!discountCode || discountCode.usage_count >= (discountCode.usage_limit ?? Infinity)) {
+  if (!discountCode) {
     return NextResponse.json({ valid: false });
   }
 
-  // Get the price rule for this discount
+  // Check usage limit
+  if (
+    discountCode.usage_limit !== null &&
+    discountCode.usage_count >= discountCode.usage_limit
+  ) {
+    return NextResponse.json({ valid: false, reason: "Usage limit reached" });
+  }
+
+  // Get the price rule
   const priceRuleRes = await fetch(
     `https://${domain}/admin/api/2024-01/price_rules/${discountCode.price_rule_id}.json`,
-    {
-      headers: { "X-Shopify-Access-Token": adminToken },
-    }
+    { headers: { "X-Shopify-Access-Token": adminToken } }
   );
 
-  const priceRuleData = await priceRuleRes.json();
+  const priceRuleText = await priceRuleRes.text();
+  console.log("Price rule status:", priceRuleRes.status);
+  console.log("Price rule body:", priceRuleText);
+
+  if (!priceRuleRes.ok) return NextResponse.json({ valid: false });
+
+  const priceRuleData = JSON.parse(priceRuleText);
   const rule = priceRuleData?.price_rule;
 
   if (!rule) return NextResponse.json({ valid: false });
 
-  // Check minimum order requirement
-  const minOrder = parseFloat(rule.prerequisite_subtotal_range?.greater_than_or_equal_to ?? "0");
+  // Check minimum order
+  const minOrder = parseFloat(
+    rule.prerequisite_subtotal_range?.greater_than_or_equal_to ?? "0"
+  );
   if (subtotal / 100 < minOrder) {
-    return NextResponse.json({ valid: false, reason: `Minimum order AED ${minOrder} required` });
+    return NextResponse.json({
+      valid: false,
+      reason: `Minimum order AED ${minOrder} required`,
+    });
   }
 
   const isPercentage = rule.value_type === "percentage";
