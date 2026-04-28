@@ -1,3 +1,4 @@
+// app/api/shipping/rates/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
 const COUNTRY_NAMES: Record<string, string> = {
@@ -19,105 +20,82 @@ export async function POST(req: NextRequest) {
   const countryName = COUNTRY_NAMES[address.country] ?? address.country;
 
   const domain = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN!;
-  const token = process.env.SHOPIFY_STOREFRONT_TOKEN!;
-  const headers = {
-    "Content-Type": "application/json",
-    "X-Shopify-Storefront-Access-Token": token,
-  };
+  const adminToken = process.env.SHOPIFY_ACCESS_TOKEN!;
 
-  // Step 1 — Create a cart
-  const createCart = await fetch(`https://${domain}/api/2024-10/graphql.json`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      query: `
-        mutation cartCreate($input: CartInput!) {
-          cartCreate(input: $input) {
-            cart { id }
-            userErrors { field message }
-          }
-        }
-      `,
-      variables: {
-        input: {
-          lines: address.lineItems.map(
+  // Use Admin API to create a draft order and get shipping rates
+  const res = await fetch(
+    `https://${domain}/admin/api/2024-01/draft_orders.json`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": adminToken,
+      },
+      body: JSON.stringify({
+        draft_order: {
+          line_items: address.lineItems.map(
             (item: { variantId: string; quantity: number }) => ({
-              merchandiseId: item.variantId.startsWith("gid://")
-                ? item.variantId
-                : `gid://shopify/ProductVariant/${item.variantId}`,
+              variant_id: item.variantId.replace(
+                "gid://shopify/ProductVariant/",
+                ""
+              ),
               quantity: item.quantity,
             })
           ),
-          buyerIdentity: {
-            deliveryAddressPreferences: [
-              {
-                deliveryAddress: {
-                  address1: address.address1,
-                  city: address.city,
-                  country: countryName,
-                  phone: address.phone,
-                },
-              },
-            ],
+          shipping_address: {
+            address1: address.address1,
+            city: address.city,
+            country: countryName,
+            phone: address.phone,
           },
         },
-      },
-    }),
-  });
-
-  const cartData = await createCart.json();
-  console.log("Cart create response:", JSON.stringify(cartData, null, 2));
-
-  const cartId = cartData?.data?.cartCreate?.cart?.id;
-  if (!cartId) {
-    console.error("Cart creation failed:", cartData?.data?.cartCreate?.userErrors);
-    return NextResponse.json({ rates: [] });
-  }
-
-  // Step 2 — Fetch delivery options  👇 added first: 10
-  const deliveryQuery = await fetch(`https://${domain}/api/2024-10/graphql.json`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      query: `
-        query getDeliveryOptions($cartId: ID!) {
-          cart(id: $cartId) {
-            deliveryGroups(first: 10) {
-              edges {
-                node {
-                  deliveryOptions {
-                    handle
-                    title
-                    estimatedCost {
-                      amount
-                      currencyCode
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      `,
-      variables: { cartId },
-    }),
-  });
-
-  const deliveryData = await deliveryQuery.json();
-  console.log("Delivery options response:", JSON.stringify(deliveryData, null, 2));
-
-  const groups = deliveryData?.data?.cart?.deliveryGroups?.edges ?? [];
-  const rates = groups.flatMap((edge: any) =>
-    edge.node.deliveryOptions.map((opt: any) => ({
-      handle: opt.handle,
-      title: opt.title,
-      price: {
-        amount: opt.estimatedCost.amount,
-        currencyCode: opt.estimatedCost.currencyCode,
-      },
-    }))
+      }),
+    }
   );
 
+  const data = await res.json();
+  console.log("Draft order response:", JSON.stringify(data, null, 2));
+
+  // Extract shipping rates from draft order
+  const shippingLine = data?.draft_order?.shipping_line;
+  const availableRates = data?.draft_order?.available_shipping_rates ?? [];
+
+  console.log("Available rates:", availableRates);
+
+  // Map to our ShippingRate format
+  const rates = availableRates.map((rate: any) => ({
+    handle: rate.name,
+    title: rate.name,
+    price: {
+      amount: rate.price,
+      currencyCode: data?.draft_order?.currency ?? "AED",
+    },
+  }));
+
+  // If no available_shipping_rates, fall back to the assigned shipping line
+  if (rates.length === 0 && shippingLine) {
+    rates.push({
+      handle: shippingLine.title,
+      title: shippingLine.title,
+      price: {
+        amount: shippingLine.price,
+        currencyCode: data?.draft_order?.currency ?? "AED",
+      },
+    });
+  }
+
   console.log("Final rates:", rates);
+
+  // Clean up — delete the draft order so it doesn't clutter admin
+  if (data?.draft_order?.id) {
+    await fetch(
+      `https://${domain}/admin/api/2024-01/draft_orders/${data.draft_order.id}.json`,
+      {
+        method: "DELETE",
+        headers: { "X-Shopify-Access-Token": adminToken },
+      }
+    );
+  }
+
   return NextResponse.json({ rates });
 }
