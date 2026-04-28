@@ -1,6 +1,20 @@
 // app/api/shipping/rates/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
+const COUNTRY_CODES: Record<string, string> = {
+  "United Arab Emirates": "AE",
+  "Saudi Arabia": "SA",
+  "India": "IN",
+  "Kuwait": "KW",
+  "Qatar": "QA",
+  "United States": "US",
+  "United Kingdom": "GB",
+  "Pakistan": "PK",
+  "Oman": "OM",
+  "Bahrain": "BH",
+  "Egypt": "EG",
+};
+
 const COUNTRY_NAMES: Record<string, string> = {
   AE: "United Arab Emirates",
   SA: "Saudi Arabia",
@@ -18,84 +32,56 @@ const COUNTRY_NAMES: Record<string, string> = {
 export async function POST(req: NextRequest) {
   const { address } = await req.json();
   const countryName = COUNTRY_NAMES[address.country] ?? address.country;
+  const countryCode = address.country.length === 2 
+    ? address.country 
+    : COUNTRY_CODES[countryName] ?? address.country;
 
   const domain = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN!;
   const adminToken = process.env.SHOPIFY_ACCESS_TOKEN!;
 
-  // Use Admin API to create a draft order and get shipping rates
+  // Fetch all shipping zones from Shopify Admin
   const res = await fetch(
-    `https://${domain}/admin/api/2024-01/draft_orders.json`,
+    `https://${domain}/admin/api/2024-01/shipping_zones.json`,
     {
-      method: "POST",
       headers: {
-        "Content-Type": "application/json",
         "X-Shopify-Access-Token": adminToken,
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        draft_order: {
-          line_items: address.lineItems.map(
-            (item: { variantId: string; quantity: number }) => ({
-              variant_id: item.variantId.replace(
-                "gid://shopify/ProductVariant/",
-                ""
-              ),
-              quantity: item.quantity,
-            })
-          ),
-          shipping_address: {
-            address1: address.address1,
-            city: address.city,
-            country: countryName,
-            phone: address.phone,
-          },
-        },
-      }),
     }
   );
 
   const data = await res.json();
-  console.log("Draft order response:", JSON.stringify(data, null, 2));
+  console.log("Shipping zones:", JSON.stringify(data, null, 2));
 
-  // Extract shipping rates from draft order
-  const shippingLine = data?.draft_order?.shipping_line;
-  const availableRates = data?.draft_order?.available_shipping_rates ?? [];
+  const zones = data?.shipping_zones ?? [];
 
-  console.log("Available rates:", availableRates);
+  // Find zone that includes the customer's country
+  const matchingZone = zones.find((zone: any) =>
+    zone.countries?.some(
+      (c: any) => c.code === countryCode || c.name === countryName
+    )
+  );
 
-  // Map to our ShippingRate format
-  const rates = availableRates.map((rate: any) => ({
+  console.log("Matching zone:", matchingZone?.name ?? "none");
+
+  if (!matchingZone) {
+    // Clean up draft order if created
+    return NextResponse.json({ rates: [] });
+  }
+
+  // Get price-based and weight-based rates from the zone
+  const rates = [
+    ...(matchingZone.price_based_shipping_rates ?? []),
+    ...(matchingZone.weight_based_shipping_rates ?? []),
+  ].map((rate: any) => ({
     handle: rate.name,
     title: rate.name,
     price: {
       amount: rate.price,
-      currencyCode: data?.draft_order?.currency ?? "AED",
+      currencyCode: "AED",
     },
   }));
 
-  // If no available_shipping_rates, fall back to the assigned shipping line
-  if (rates.length === 0 && shippingLine) {
-    rates.push({
-      handle: shippingLine.title,
-      title: shippingLine.title,
-      price: {
-        amount: shippingLine.price,
-        currencyCode: data?.draft_order?.currency ?? "AED",
-      },
-    });
-  }
-
   console.log("Final rates:", rates);
-
-  // Clean up — delete the draft order so it doesn't clutter admin
-  if (data?.draft_order?.id) {
-    await fetch(
-      `https://${domain}/admin/api/2024-01/draft_orders/${data.draft_order.id}.json`,
-      {
-        method: "DELETE",
-        headers: { "X-Shopify-Access-Token": adminToken },
-      }
-    );
-  }
-
   return NextResponse.json({ rates });
 }
