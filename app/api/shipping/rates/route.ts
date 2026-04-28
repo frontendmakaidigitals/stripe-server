@@ -51,7 +51,6 @@ export async function POST(req: NextRequest) {
   );
 
   const data = await res.json();
-  console.log("Shipping zones:", JSON.stringify(data, null, 2));
 
   const zones = data?.shipping_zones ?? [];
 
@@ -62,7 +61,6 @@ export async function POST(req: NextRequest) {
     )
   );
 
-  console.log("Matching zone:", matchingZone?.name ?? "none");
 
   if (!matchingZone) {
     // Clean up draft order if created
@@ -70,18 +68,26 @@ export async function POST(req: NextRequest) {
   }
 
   // Get price-based and weight-based rates from the zone
-  const rates = [
-    ...(matchingZone.price_based_shipping_rates ?? []),
-    ...(matchingZone.weight_based_shipping_rates ?? []),
-  ].map((rate: any) => ({
-    handle: rate.name,
-    title: rate.name,
-    price: {
-      amount: rate.price,
-      currencyCode: "AED",
-    },
-  }));
+ const DELIVERY_ESTIMATES: Record<string, string> = {
+  "Standard": "14 business days",
+  "Express": "3-5 business days",
+  "Overnight": "Next business day",
+  "Economy": "21-28 business days",
+  "Free Shipping": "14 business days",
+};
 
-  console.log("Final rates:", rates);
+const rates = [
+  ...(matchingZone.price_based_shipping_rates ?? []),
+  ...(matchingZone.weight_based_shipping_rates ?? []),
+].map((rate: any) => ({
+  handle: rate.name,
+  title: rate.name,
+  estimatedDays: DELIVERY_ESTIMATES[rate.name] ?? null,
+  price: {
+    amount: rate.price,
+    currencyCode: "AED",
+  },
+}));
+
   return NextResponse.json({ rates });
 }

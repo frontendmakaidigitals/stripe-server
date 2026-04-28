@@ -15,6 +15,7 @@ const SHIPPING_RATE = 35; // AED – replace with dynamic value if needed
 type ShippingRate = {
   handle: string;
   title: string;
+  estimatedDays?: string | null;
   price: { amount: string; currencyCode: string };
 };
 function fmt(amount: number, currency: string) {
@@ -506,20 +507,12 @@ export default function CheckoutClient({
                                 : "border-[#d4d4d4] bg-white hover:bg-[#fafafa]"
                             }`}
                           >
-                            <input
-                              type="radio"
-                              name="shipping"
-                              checked={selectedRate?.handle === rate.handle}
-                              onChange={() => setSelectedRate(rate)}
-                              className="w-4 h-4 accent-[#1a1a1a]"
-                            />
                             <span className="flex-1 text-sm font-medium">
                               {rate.title}
-                            </span>
-                            <span className="text-sm font-semibold">
-                              {fmt(
-                                parseFloat(rate.price.amount),
-                                rate.price.currencyCode,
+                              {rate.estimatedDays && (
+                                <span className="block text-xs text-neutral-500 font-normal mt-0.5">
+                                  {rate.estimatedDays}
+                                </span>
                               )}
                             </span>
                           </label>
