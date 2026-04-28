@@ -7,7 +7,6 @@ export async function POST(req: NextRequest) {
   const domain = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN!;
   const adminToken = process.env.SHOPIFY_ACCESS_TOKEN!;
 
-  // Query Shopify Admin for price rules matching this code
   const res = await fetch(
     `https://${domain}/admin/api/2024-01/discount_codes/lookup.json?code=${encodeURIComponent(code)}`,
     {
@@ -17,6 +16,11 @@ export async function POST(req: NextRequest) {
       },
     }
   );
+
+  // 👇 Add this
+  const text = await res.text();
+  console.log("Discount lookup status:", res.status);
+  console.log("Discount lookup body:", text);
 
   if (!res.ok) {
     return NextResponse.json({ valid: false });
