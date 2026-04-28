@@ -216,6 +216,26 @@ export default function CheckoutClient({
       setLoading(false);
     }
   }
+  useEffect(() => {
+    async function checkAutoDiscount() {
+      try {
+        const res = await fetch("/api/discount/auto", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subtotal: total }),
+        });
+        const data = await res.json();
+        if (data.valid) {
+          setDiscountResult(data);
+          // Show the code in the input so user knows what was applied
+          setDiscountCode(data.code);
+        }
+      } catch (e) {
+        // silently fail — auto discount is optional
+      }
+    }
+    checkAutoDiscount();
+  }, []);
 
   function handlePayNow(e: React.FormEvent) {
     e.preventDefault();
@@ -745,12 +765,21 @@ export default function CheckoutClient({
                   {fmt(total, currency)}
                 </span>
               </div>
-              {discountAmount > 0 && (
-                <div className="flex justify-between text-sm text-green-600">
-                  <span>Discount ({discountResult?.code})</span>
-                  <span className="font-medium">
-                    −{fmt(discountAmount, currency)}
-                  </span>
+              {discountResult && (
+                <div
+                  className={`mb-4 text-sm px-3 py-2 rounded-md ${
+                    discountResult.valid
+                      ? "bg-green-50 border border-green-200 text-green-700"
+                      : "bg-red-50 border border-red-200 text-red-600"
+                  }`}
+                >
+                  {discountResult.valid
+                    ? `✓ ${(discountResult as any).automatic ? "Auto-applied: " : ""}"${discountResult.code}" — ${
+                        discountResult.type === "percentage"
+                          ? `${discountResult.amount}% off`
+                          : fmt(discountResult.amount, currency)
+                      }`
+                    : "Invalid or expired discount code"}
                 </div>
               )}
               <div className="flex justify-between text-sm text-[#555]">
