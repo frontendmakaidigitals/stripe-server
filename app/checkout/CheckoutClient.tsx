@@ -48,12 +48,40 @@ export default function CheckoutClient({
   const [shippingRates, setShippingRates] = useState<ShippingRate[]>([]);
   const [selectedRate, setSelectedRate] = useState<ShippingRate | null>(null);
   const [ratesLoading, setRatesLoading] = useState(false);
+  const [discountCode, setDiscountCode] = useState("");
+  const [discountResult, setDiscountResult] = useState<{
+    valid: boolean;
+    amount: number;
+    type: "percentage" | "fixed" | null;
+    code: string;
+  } | null>(null);
+  const [discountLoading, setDiscountLoading] = useState(false);
 
+  // Add discount calculation
+  const discountAmount = discountResult?.valid
+    ? discountResult.type === "percentage"
+      ? (total * discountResult.amount) / 100
+      : discountResult.amount
+    : 0;
   const [selectedAddressId, setSelectedId] = useState<string>(
     defaultAddr?.id ?? "",
   );
   const [useNewAddress, setUseNewAddress] = useState(false);
-
+  async function applyDiscount() {
+    if (!discountCode.trim()) return;
+    setDiscountLoading(true);
+    try {
+      const res = await fetch("/api/discount/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: discountCode, subtotal: total }),
+      });
+      const data = await res.json();
+      setDiscountResult(data);
+    } finally {
+      setDiscountLoading(false);
+    }
+  }
   const [customer, setCustomer] = useState<CustomerInfo>({
     id: prefill.id || "",
     name: prefill.name || "",
@@ -69,7 +97,7 @@ export default function CheckoutClient({
     ? parseFloat(selectedRate.price.amount)
     : SHIPPING_RATE;
 
-  const grandTotal = total + shippingCost;
+  const grandTotal = total + shippingCost - discountAmount;
   async function fetchShippingRates(addr: CustomerInfo) {
     console.log("fetchShippingRates called with:", addr);
     if (!addr.address || !addr.city || !addr.country) return;
@@ -483,6 +511,7 @@ export default function CheckoutClient({
                   </section>
 
                   {/* ── SHIPPING METHOD ── */}
+                  {/* ── SHIPPING METHOD ── */}
                   <section className="mb-8 border-t border-b border-gray-300 py-4">
                     <p className="text-neutral-600 text-sm mb-3">
                       Shipping method
@@ -497,43 +526,36 @@ export default function CheckoutClient({
                         Enter your address to see shipping options.
                       </p>
                     ) : (
-                      <div className="flex flex-col divide-y rounded-md overflow-hidden">
+                      <div className="flex flex-col border rounded-md overflow-hidden">
                         {shippingRates.map((rate) => {
                           const isSelected =
                             selectedRate?.handle === rate.handle;
-
                           return (
-                            <div className="flex flex-col divide-y border rounded-md overflow-hidden">
-                              {shippingRates.map((rate) => {
-                                const isSelected =
-                                  selectedRate?.handle === rate.handle;
-
-                                return (
-                                  <div
-                                    key={rate.handle}
-                                    onClick={() => setSelectedRate(rate)}
-                                    className={`flex items-start justify-between gap-4 px-4 py-4 cursor-pointer transition ${
-                                      isSelected
-                                        ? "bg-[#f5f7ff] border-l-4 border-[#1a1a1a]"
-                                        : "bg-primary/10 hover:bg-[#fafafa]"
-                                    }`}
-                                  >
-                                    {/* LEFT CONTENT */}
-                                    <div className="flex flex-col text-sm">
-                                      <span className="font-medium text-[#1a1a1a]">
-                                        {rate.title} · {rate.price.currencyCode}{" "}
-                                        {rate.price.amount}
-                                      </span>
-
-                                      {rate.estimatedDays && (
-                                        <span className="text-neutral-500 mt-1">
-                                          {rate.estimatedDays}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                            <div
+                              key={rate.handle}
+                              onClick={() => setSelectedRate(rate)}
+                              className={`flex items-start justify-between gap-4 px-4 py-4 cursor-pointer transition border-b last:border-b-0 ${
+                                isSelected
+                                  ? "bg-[#f5f7ff] border-l-4 border-[#1a1a1a]"
+                                  : "bg-white hover:bg-[#fafafa]"
+                              }`}
+                            >
+                              <div className="flex flex-col text-sm">
+                                <span className="font-medium text-[#1a1a1a]">
+                                  {rate.title}
+                                </span>
+                                {rate.estimatedDays && (
+                                  <span className="text-neutral-500 text-xs mt-0.5">
+                                    {rate.estimatedDays}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-sm font-semibold shrink-0">
+                                {fmt(
+                                  parseFloat(rate.price.amount),
+                                  rate.price.currencyCode,
+                                )}
+                              </span>
                             </div>
                           );
                         })}
@@ -675,18 +697,45 @@ export default function CheckoutClient({
             </div>
 
             {/* Discount code */}
-            <div className="flex gap-2 mb-6">
+            {/* Discount code */}
+            <div className="flex gap-2 mb-4">
               <input
                 className="flex-1 border-2 border-[#d4d4d4] rounded-md p-4 text-sm bg-white outline-none focus:border-primary transition-colors"
                 placeholder="Discount code"
+                value={discountCode}
+                onChange={(e) => {
+                  setDiscountCode(e.target.value);
+                  if (discountResult) setDiscountResult(null);
+                }}
+                onKeyDown={(e) => e.key === "Enter" && applyDiscount()}
               />
               <button
-                disabled
-                className="border disabled:bg-gray-400 border-[#d4d4d4]  rounded-md px-4 py-2.5 text-sm font-medium bg-primary text-white hover:bg-[#f0f0f0] transition-colors"
+                onClick={applyDiscount}
+                disabled={discountLoading || !discountCode.trim()}
+                className="border disabled:bg-gray-400 border-[#d4d4d4] rounded-md px-4 py-2.5 text-sm font-medium bg-primary text-white transition-colors"
               >
-                Apply
+                {discountLoading ? "…" : "Apply"}
               </button>
             </div>
+
+            {/* Discount feedback */}
+            {discountResult && (
+              <div
+                className={`mb-4 text-sm px-3 py-2 rounded-md ${
+                  discountResult.valid
+                    ? "bg-green-50 border border-green-200 text-green-700"
+                    : "bg-red-50 border border-red-200 text-red-600"
+                }`}
+              >
+                {discountResult.valid
+                  ? `✓ "${discountResult.code}" applied — ${
+                      discountResult.type === "percentage"
+                        ? `${discountResult.amount}% off`
+                        : fmt(discountResult.amount, currency)
+                    }`
+                  : "Invalid or expired discount code"}
+              </div>
+            )}
 
             {/* Totals */}
             <div className="border-t border-[#e0e0e0] pt-5 flex flex-col gap-3">
@@ -696,6 +745,14 @@ export default function CheckoutClient({
                   {fmt(total, currency)}
                 </span>
               </div>
+              {discountAmount > 0 && (
+                <div className="flex justify-between text-sm text-green-600">
+                  <span>Discount ({discountResult?.code})</span>
+                  <span className="font-medium">
+                    −{fmt(discountAmount, currency)}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between text-sm text-[#555]">
                 <span>Shipping</span>
                 <span className="font-medium text-[#1a1a1a]">
@@ -710,7 +767,7 @@ export default function CheckoutClient({
               <div className="flex justify-between items-baseline border-t border-[#e0e0e0] pt-4 mt-1">
                 <span className="text-base font-semibold">Total</span>
                 <div className="text-right">
-                  <span className=" mr-1">{currency}</span>
+                  <span className="mr-1">{currency}</span>
                   <span className="text-2xl font-bold">
                     {fmt(grandTotal, currency).replace(/[A-Z]{3}\s?/, "")}
                   </span>
