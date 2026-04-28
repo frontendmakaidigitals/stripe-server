@@ -91,7 +91,7 @@ export default function CheckoutClient({
         }),
       });
       const data = await res.json();
-      console.log("Shipping API response:", data); 
+      console.log("Shipping API response:", data);
       setShippingRates(data.rates ?? []);
       setSelectedRate(data.rates?.[0] ?? null); // auto-select first
     } finally {
