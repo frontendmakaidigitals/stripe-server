@@ -1,8 +1,22 @@
 // app/api/shipping/rates/route.ts
 import { NextRequest, NextResponse } from "next/server";
+const COUNTRY_NAMES: Record<string, string> = {
+  AE: "United Arab Emirates",
+  SA: "Saudi Arabia",
+  IN: "India",
+  KW: "Kuwait",
+  QA: "Qatar",
+  US: "United States",
+  GB: "United Kingdom",
+  PK: "Pakistan",
+  OM: "Oman",
+  BH: "Bahrain",
+  EG: "Egypt",
+};
 
 export async function POST(req: NextRequest) {
   const { address } = await req.json();
+  const countryName = COUNTRY_NAMES[address.country] ?? address.country;
 
   const query = `
     mutation checkoutCreate($input: CheckoutCreateInput!) {
@@ -39,7 +53,7 @@ export async function POST(req: NextRequest) {
             shippingAddress: {
               address1: address.address1,
               city: address.city,
-              country: address.country,
+              country: countryName,
               phone: address.phone,
             },
             lineItems: address.lineItems, // [{ variantId, quantity }]
