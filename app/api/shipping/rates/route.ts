@@ -1,5 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+type Country = {
+  code: string;
+  name: string;
+};
 
+type ShippingRate = {
+  id?: number | string;
+  name?: string;
+  price?: string;
+  min_order_subtotal?: string | null;
+  max_order_subtotal?: string | null;
+};
+
+type ShippingZone = {
+  name: string;
+  countries?: Country[];
+  price_based_shipping_rates?: ShippingRate[];
+  weight_based_shipping_rates?: ShippingRate[];
+};
 const COUNTRY_NAMES: Record<string, string> = {
   AE: "United Arab Emirates",
   SA: "Saudi Arabia",
@@ -89,7 +107,7 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await res.json();
-    const zones: any[] = data?.shipping_zones ?? [];
+   const zones: ShippingZone[] = data?.shipping_zones ?? [];
 
     console.log(
       `[Shipping] Total zones: ${zones.length}`,
@@ -152,6 +170,11 @@ export async function POST(req: NextRequest) {
           continue;
         }
       }
+ console.log("Zones:", JSON.stringify(zones.map(z => ({
+  name: z.name,
+  countries: z.countries?.map(c => c.code)
+})), null, 2));
+
 
       rates.push({
         handle: rate.id?.toString() ?? rate.name,
@@ -163,7 +186,10 @@ export async function POST(req: NextRequest) {
         },
       });
     }
-
+  console.log("All zones:", JSON.stringify(zones.map((z: any) => ({
+    name: z.name,
+    countries: z.countries?.map((c: any) => ({ code: c.code, name: c.name }))
+  })), null, 2));
     // Process weight-based rates
     for (const rate of weightBased) {
       const price = parseFloat(String(rate.price ?? "0")) || 0;

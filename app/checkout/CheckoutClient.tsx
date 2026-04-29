@@ -134,7 +134,7 @@ export default function CheckoutClient({
   const grandTotal =
     total + shippingInDisplayCurrency - discountAmount + codFee;
   async function fetchShippingRates(addr: CustomerInfo) {
-    if (!addr.address || !addr.city || !addr.country) return;
+    if (!addr.city || !addr.country) return; // ← remove addr.address check
     setRatesLoading(true);
     try {
       const res = await fetch("/api/shipping/rates", {
@@ -184,7 +184,13 @@ export default function CheckoutClient({
       // Guest / new address form
       fetchShippingRates(customer);
     }
-  }, [selectedAddressId, useNewAddress, customer.city, customer.country]);
+  }, [
+    selectedAddressId,
+    useNewAddress,
+    customer.city,
+    customer.country,
+    customer.address,
+  ]);
   function getOrderCustomer(): CustomerInfo {
     if (hasAddresses && !useNewAddress) {
       const addr = savedAddresses.find(
