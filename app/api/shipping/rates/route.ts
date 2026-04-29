@@ -87,18 +87,25 @@ export async function POST(req: NextRequest) {
       ...(matchingZone.carrier_shipping_rate_providers ?? []),
     ];
 
-    const rates = allRates.map((rate: any) => ({
-      handle:       rate.id?.toString() ?? rate.name,
-      title:        rate.name,
-      estimatedDays: DELIVERY_ESTIMATES[rate.name] ?? null,
-      price: {
-        // carrier rates use 'flat_modifier', price-based use 'price'
-        amount:       rate.price ?? rate.flat_modifier ?? "0",
-        currencyCode: "AED",
-      },
-    }));
+  const rates = allRates.map((rate: any) => {
+  // price_based rates: rate.price is a string like "0.00" or "35.00"
+  // carrier rates: rate.flat_modifier is a number
+  // weight_based rates: rate.price is also a string
+  const rawPrice = rate.price ?? rate.flat_modifier ?? 0;
+  const numericPrice = typeof rawPrice === "object"
+    ? 0  // carrier calculated — price is unknown at this stage
+    : parseFloat(String(rawPrice)) || 0;
 
-    console.log(`[Shipping] Returning ${rates.length} rates:`, rates.map((r: any) => r.title));
+  return {
+    handle:        rate.id?.toString() ?? rate.name ?? "unknown",
+    title:         rate.name ?? "Standard Shipping",   // ✅ fallback title
+    estimatedDays: DELIVERY_ESTIMATES[rate.name] ?? null,
+    price: {
+      amount:       numericPrice.toFixed(2),            // ✅ always a clean string
+      currencyCode: "AED",
+    },
+  };
+});
 
     return NextResponse.json({ rates });
 

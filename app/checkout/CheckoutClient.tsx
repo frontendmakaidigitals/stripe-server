@@ -187,11 +187,7 @@ export default function CheckoutClient({
     }
     return customer;
   }
-  useEffect(() => {
-    if (currency.toUpperCase() !== "AED" && method === "cod") {
-      setMethod(null);
-    }
-  }, [currency, method]);
+ 
 
   async function startStripe() {
     setLoading(true);
