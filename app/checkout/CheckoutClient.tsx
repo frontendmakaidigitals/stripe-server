@@ -19,13 +19,12 @@ type ShippingRate = {
   price: { amount: string; currencyCode: string };
 };
 function fmt(amount: number, currency: string) {
-  return new Intl.NumberFormat("en-AE", {
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
     minimumFractionDigits: 2,
-  }).format(amount);
+  }).format(Number(amount));
 }
-
 export default function CheckoutClient({
   payload,
 }: {
@@ -216,26 +215,6 @@ export default function CheckoutClient({
       setLoading(false);
     }
   }
-  useEffect(() => {
-    async function checkAutoDiscount() {
-      try {
-        const res = await fetch("/api/discount/auto", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subtotal: total }),
-        });
-        const data = await res.json();
-        if (data.valid) {
-          setDiscountResult(data);
-          // Show the code in the input so user knows what was applied
-          setDiscountCode(data.code);
-        }
-      } catch (e) {
-        // silently fail — auto discount is optional
-      }
-    }
-    checkAutoDiscount();
-  }, []);
 
   function handlePayNow(e: React.FormEvent) {
     e.preventDefault();
