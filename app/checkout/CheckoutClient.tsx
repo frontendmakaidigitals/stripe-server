@@ -112,7 +112,7 @@ export default function CheckoutClient({
     phone: prefill.phone || "",
     address: prefill.address || "",
     city: prefill.city || "",
-    country: prefill.country || null,
+    country: prefill.country || "",
     addresses: prefill.addresses ?? [],
   });
   const COD_COUNTRIES = ["AE"];
@@ -465,7 +465,7 @@ export default function CheckoutClient({
                         <div className="relative">
                           <Combobox
                             items={countries}
-                            value={customer.country}
+                            value={customer.country || null}
                             onValueChange={(value: any) => {
                               const code =
                                 typeof value === "object" && value?.code
