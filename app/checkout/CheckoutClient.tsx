@@ -112,7 +112,7 @@ export default function CheckoutClient({
     phone: prefill.phone || "",
     address: prefill.address || "",
     city: prefill.city || "",
-    country: prefill.country || "AE",
+    country: prefill.country || null,
     addresses: prefill.addresses ?? [],
   });
   const COD_COUNTRIES = ["AE"];
@@ -126,7 +126,8 @@ export default function CheckoutClient({
     return customer.country;
   })();
   const codAvailable = isCODAvailable(currentCountry);
-  function isCODAvailable(country: string): boolean {
+  function isCODAvailable(country: string | null): boolean {
+    if (!country) return false; // ✅ prevents crash
     return COD_COUNTRIES.includes(country.toUpperCase());
   }
   const COD_FEE_AED = 10;
@@ -456,32 +457,33 @@ export default function CheckoutClient({
                         {/* Country */}
                         <div className="relative">
                           <Combobox
+                            items={countries}
                             value={customer.country}
                             onValueChange={(value) => {
-                              if (!value) return;
-
                               setCustomer((c: any) => ({
                                 ...c,
                                 country: value,
                               }));
                             }}
                           >
-                            {/* INPUT */}
                             <ComboboxInput
                               placeholder="Select country..."
-                              className="w-full border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm outline-none focus:border-[#1a1a1a]"
+                              className="w-full rounded-sm! border bg-white border-gray-300 h-11.5! text-sm outline-none focus:border-[#1a1a1a]"
                             />
 
-                            {/* DROPDOWN */}
-                            <ComboboxContent className="max-h-72">
-                              <ComboboxList>
-                                <ComboboxEmpty>No country found.</ComboboxEmpty>
+                            <ComboboxContent className="rounded-md! max-h-72">
+                              <ComboboxEmpty>No country found.</ComboboxEmpty>
 
-                                {countries.map((c) => (
-                                  <ComboboxItem key={c.code} value={c.code}>
-                                    {c.name}
+                              <ComboboxList>
+                                {(item) => (
+                                  <ComboboxItem
+                                    key={item.code}
+                                    value={item.code}
+                                    className="rounded-md! py-3"
+                                  >
+                                    {item.name}
                                   </ComboboxItem>
-                                ))}
+                                )}
                               </ComboboxList>
                             </ComboboxContent>
                           </Combobox>

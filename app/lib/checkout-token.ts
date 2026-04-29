@@ -26,7 +26,7 @@ export interface CustomerInfo {
   phone: string;
   address: string;
   city: string;
-  country: string;
+  country: string | null;
   addresses: ShopifyAddress[];
 }
 
