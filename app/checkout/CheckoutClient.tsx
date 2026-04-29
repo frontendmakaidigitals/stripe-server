@@ -250,7 +250,7 @@ export default function CheckoutClient({
           currency,
           customer: getOrderCustomer(),
           token: payload.token,
-          shipping: shippingCostAED,
+          shipping: shippingCost,
           shippingHandle: selectedRate?.handle,
           discountCode: discountResult?.valid ? discountCode : undefined,
         }),
@@ -276,7 +276,7 @@ export default function CheckoutClient({
           currency,
           customer: getOrderCustomer(),
           token: payload.token,
-          shipping: shippingCostAED,
+          shipping: shippingCost,
           codFee,
           shippingHandle: selectedRate?.handle,
         }),
@@ -891,7 +891,6 @@ export default function CheckoutClient({
                   <span className="text-2xl font-bold">
                     {fmt(grandTotal, currency)}
                   </span>
-                  
                 </div>
               </div>
             </div>
