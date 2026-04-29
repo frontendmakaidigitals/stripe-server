@@ -5,7 +5,7 @@ const DELIVERY_ESTIMATES: Record<string, string> = {
   "Express": "3-5 business days",
   "Overnight": "Next business day",
   "Economy": "21-28 business days",
-  "Free Shipping": "Free for orders over AED 351",
+  "Free Shipping": "Free for orders over AED 350",
   "Same Day Delivery (Dubai) Order Before 2PM (Except weekends & Public holidays)":
     "Same day (order before 2PM)",
   "AUT": "14 business days",
