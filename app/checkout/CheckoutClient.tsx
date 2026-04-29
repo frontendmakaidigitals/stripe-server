@@ -67,6 +67,7 @@ export default function CheckoutClient({
   const [selectedRate, setSelectedRate] = useState<ShippingRate | null>(null);
   const [ratesLoading, setRatesLoading] = useState(false);
   const [discountCode, setDiscountCode] = useState("");
+  const [aedToBase, setAedToBase] = useState<number>(1);
   const [discountResult, setDiscountResult] = useState<{
     valid: boolean;
     amount: number;
@@ -89,6 +90,17 @@ export default function CheckoutClient({
   const [selectedAddressId, setSelectedId] = useState<string>(
     defaultAddr?.id ?? "",
   );
+
+  useEffect(() => {
+    if (currency === "AED") {
+      setAedToBase(1);
+      return;
+    }
+    fetch(`/api/exchange-rate?from=AED&to=${currency}`)
+      .then((r) => r.json())
+      .then((d) => setAedToBase(d.rate ?? 1))
+      .catch(() => setAedToBase(1));
+  }, [currency]);
   const [useNewAddress, setUseNewAddress] = useState(false);
   async function applyDiscount() {
     if (!discountCode.trim()) return;
@@ -105,6 +117,7 @@ export default function CheckoutClient({
       setDiscountLoading(false);
     }
   }
+
   const [customer, setCustomer] = useState<CustomerInfo>({
     id: prefill.id || "",
     name: prefill.name || "",
@@ -138,19 +151,16 @@ export default function CheckoutClient({
     return COD_COUNTRIES.includes(code.toUpperCase());
   }
   const COD_FEE_AED = 10;
-  const shippingCost = selectedRate
+  const shippingCostAED = selectedRate
     ? parseFloat(selectedRate.price.amount) || 0
     : 0;
-
-  type CountryValue = string | { code: string; name: string };
-
-  const codFee = method === "cod" && codAvailable ? COD_FEE_AED : 0;
+  const codFeeAED = method === "cod" && codAvailable ? COD_FEE_AED : 0;
 
   const shippingCurrency = selectedRate?.price.currencyCode ?? "AED";
-  const shippingInDisplayCurrency =
-    shippingCurrency === currency ? shippingCost : 0;
-  const grandTotal =
-    total + shippingInDisplayCurrency - discountAmount + codFee;
+  const shippingCost = shippingCostAED * aedToBase;
+  const codFee = codFeeAED * aedToBase;
+  const grandTotal = total + shippingCost - discountAmount + codFee;
+
   async function fetchShippingRates(addr: CustomerInfo) {
     if (!addr.city || !addr.country) return;
     const countryCode = toCountryCode(addr.country); // ← convert here
@@ -240,7 +250,7 @@ export default function CheckoutClient({
           currency,
           customer: getOrderCustomer(),
           token: payload.token,
-          shipping: shippingCost,
+          shipping: shippingCostAED,
           shippingHandle: selectedRate?.handle,
           discountCode: discountResult?.valid ? discountCode : undefined,
         }),
@@ -266,7 +276,7 @@ export default function CheckoutClient({
           currency,
           customer: getOrderCustomer(),
           token: payload.token,
-          shipping: shippingCost,
+          shipping: shippingCostAED,
           codFee,
           shippingHandle: selectedRate?.handle,
         }),
@@ -872,7 +882,7 @@ export default function CheckoutClient({
                       ? "—"
                       : shippingCost === 0
                         ? "FREE"
-                        : fmt(shippingCost, shippingCurrency)}
+                        : fmt(shippingCost, currency)}
                 </span>
               </div>
               <div className="flex justify-between items-baseline border-t border-[#e0e0e0] pt-4 mt-1">
