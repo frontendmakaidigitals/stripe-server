@@ -477,8 +477,8 @@ export default function CheckoutClient({
                               <ComboboxList>
                                 {(item) => (
                                   <ComboboxItem
+                                    value={item}
                                     key={item.code}
-                                    value={item.code}
                                     className="rounded-md! py-3"
                                   >
                                     {item.name}
