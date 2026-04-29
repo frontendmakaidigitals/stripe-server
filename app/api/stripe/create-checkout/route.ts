@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
       discountCode,
       discountAmount,
       discountType,
+      cancelUrl
     }: {
       items: CartItem[];
       currency: string;
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
       discountCode?: string;
       discountAmount?: number;
       discountType?: "percentage" | "fixed" | null;
+      cancelUrl?: string;
     } = body;
 
     if (!items?.length) {
@@ -101,7 +103,7 @@ export async function POST(request: NextRequest) {
         ? { discounts }
         : { allow_promotion_codes: false }),
       success_url: `${baseUrl}/success`,
-      cancel_url: `${baseUrl}/cancel`,
+       cancel_url: cancelUrl || `${baseUrl}/checkout`,
       metadata: {
         token: token || "",
         customerName: (customer?.name || "").slice(0, 100),
