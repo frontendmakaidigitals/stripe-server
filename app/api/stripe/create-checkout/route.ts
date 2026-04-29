@@ -27,8 +27,8 @@ export async function POST(request: NextRequest) {
       shipping,
       shippingHandle,
       discountCode,
-      discountAmount,  // ← new: the calculated amount in display currency
-      discountType,    // ← new: "percentage" | "fixed"
+      discountAmount,
+      discountType,
     }: {
       items: CartItem[];
       currency: string;
@@ -45,49 +45,53 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No items" }, { status: 400, headers: CORS_HEADERS });
     }
 
-    // Create a one-time Stripe coupon from the Shopify-validated discount
-    // No Stripe promo code lookup needed — we trust our own /api/discount/validate
-    let discounts: { coupon: string }[] | undefined;
-    if (discountCode && discountAmount && discountAmount > 0) {
-      try {
-        const coupon = await stripe.coupons.create({
-          name: discountCode.toUpperCase(),
-          ...(discountType === "percentage"
-            ? { percent_off: discountAmount }                                      // e.g. 20 = 20% off
-            : { amount_off: Math.round(discountAmount * 100), currency: currency.toLowerCase() }), // fixed in cents
-          duration: "once",
-          max_redemptions: 1,
-        });
-        discounts = [{ coupon: coupon.id }];
-      } catch (e) {
-        console.warn("[Stripe] Could not create coupon:", e);
-        // Don't block checkout — just proceed without discount
-      }
-    }
-
+    const curr = currency.toLowerCase();
     const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
 
-    const lineItems = items.map((item) => ({
-      price_data: {
-        currency: currency.toLowerCase(),
-        product_data: {
-          name: item.product_title,
-          images: item.image ? [item.image] : [],
-        },
-        unit_amount: Math.round(item.price * 100),
-      },
-      quantity: item.quantity,
-    }));
+   const lineItems = items.map((item) => ({
+  price_data: {
+    currency: curr,
+    product_data: {
+      name: item.product_title,
+      images: item.image ? [item.image] : [],
+    },
+    unit_amount: Math.round(item.price * 100),
+  },
+  quantity: item.quantity,
+}));
 
     if (shipping && shipping > 0) {
       lineItems.push({
         price_data: {
-          currency: currency.toLowerCase(),
+          currency: curr,
+          product_data: { name: "Shipping", images: [] },
+          unit_amount: Math.round(shipping * 100),
+        },
+        quantity: 1,
+      });
+    }
+
+    // Calculate the actual discount amount in display currency
+    let resolvedDiscountAmount = 0;
+    if (discountAmount && discountAmount > 0) {
+      resolvedDiscountAmount = discountAmount;
+    } else if (discountType === "percentage" && discountAmount) {
+      // discountAmount is the percentage value (e.g. 20 for 20%)
+      const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+      resolvedDiscountAmount = (subtotal * discountAmount) / 100;
+    }
+
+    // Add discount as a NEGATIVE line item — most reliable approach in Stripe
+    // Works for any currency, any discount type, no coupon API needed
+    if (resolvedDiscountAmount > 0 && discountCode) {
+      lineItems.push({
+        price_data: {
+          currency: curr,
           product_data: {
-            name: "Shipping",
+            name: `Discount (${discountCode.toUpperCase()})`,
             images: [],
           },
-          unit_amount: Math.round(shipping * 100),
+          unit_amount: -Math.round(resolvedDiscountAmount * 100), // ← negative amount
         },
         quantity: 1,
       });
@@ -98,10 +102,7 @@ export async function POST(request: NextRequest) {
       payment_method_types: ["card"],
       customer_email: customer?.email || undefined,
       line_items: lineItems,
-      // discounts[] and allow_promotion_codes are mutually exclusive in Stripe
-      ...(discounts
-        ? { discounts }
-        : { allow_promotion_codes: false }), // no discount = no promo box either
+      allow_promotion_codes: false,
       success_url: `${baseUrl}/success`,
       cancel_url: `${baseUrl}/cancel`,
       metadata: {

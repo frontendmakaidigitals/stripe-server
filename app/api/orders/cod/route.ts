@@ -10,6 +10,9 @@ interface CODRequest {
   shipping?: number;
   shippingHandle?: string;
   codFee?: number;
+  discountCode?: string;       // ← add
+  discountAmount?: number;     // ← add
+  discountType?: string | null; // ← add
 }
 
 async function createShopifyOrder(
@@ -17,6 +20,7 @@ async function createShopifyOrder(
   customer: CustomerInfo,
   currency: string,
   codFee: number = 0,
+  discountCode?: string,  
 ) {
   const domain = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN!;
   const token  = process.env.SHOPIFY_ACCESS_TOKEN!;
@@ -56,23 +60,27 @@ async function createShopifyOrder(
     });
   }
 
-  const draftRes = await fetch(
+   const draftRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders.json`,
     {
-      method:  "POST",
-      headers: {
-        "X-Shopify-Access-Token": token,
-        "Content-Type":           "application/json",
-      },
+      method: "POST",
+      headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
       body: JSON.stringify({
         draft_order: {
-          line_items:       lineItems,
-          email:            customer.email,
+          line_items: lineItems,
+          email: customer.email,
           shipping_address: address,
-          billing_address:  address,
-          note:             `COD order — phone: ${customer.phone}${codFee > 0 ? ` | COD fee: ${codFee.toFixed(2)} ${currency}` : ""}`,
-          tags:             "COD, custom-checkout",
-          send_receipt:     false,
+          billing_address: address,
+          note: `COD order — phone: ${customer.phone}${codFee > 0 ? ` | COD fee: ${codFee.toFixed(2)} ${currency}` : ""}`,
+          tags: "COD, custom-checkout",
+          send_receipt: false,
+          ...(discountCode ? { applied_discount: {
+            value_type: "percentage",   // Shopify will look it up by code
+            value: "0",
+            title: discountCode,
+            description: discountCode,
+            application_type: "discount_code",  // ← tells Shopify to apply the actual code
+          }} : {}),
         },
       }),
     },
@@ -117,7 +125,7 @@ async function createShopifyOrder(
 export async function POST(request: NextRequest) {
   try {
     const body: CODRequest = await request.json();
-    const { items, currency = "AED", customer, codFee = 0 } = body;
+    const { items, currency = "AED", customer, codFee = 0, discountCode } = body;
 
     if (!items?.length) {
       return NextResponse.json({ error: "No items in cart" }, { status: 400 });
@@ -126,8 +134,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing customer details" }, { status: 400 });
     }
 
-    // ✅ Pass codFee to order creation
-    const result = await createShopifyOrder(items, customer, currency, codFee);
+const result = await createShopifyOrder(items, customer, currency, codFee, discountCode);
 
     const token = request.headers.get("x-checkout-token") || body.token;
     if (token) markTokenUsed(token);
