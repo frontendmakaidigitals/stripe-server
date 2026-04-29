@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
       token,
       shipping,
       shippingHandle,
+      discountCode
     }: {
       items: CartItem[];
       currency: string;
@@ -33,10 +34,27 @@ export async function POST(request: NextRequest) {
       token?: string;
       shipping?: number;
       shippingHandle?: string;
+       discountCode?: string; 
     } = body;
 
     if (!items?.length) {
       return NextResponse.json({ error: "No items" }, { status: 400, headers: CORS_HEADERS });
+    }
+     // ✅ If discount code provided, look it up in Stripe and apply it
+    let discounts: { promotion_code: string }[] | undefined;
+    if (discountCode) {
+      try {
+        const promoCodes = await stripe.promotionCodes.list({
+          code:   discountCode,
+          active: true,
+          limit:  1,
+        });
+        if (promoCodes.data.length > 0) {
+          discounts = [{ promotion_code: promoCodes.data[0].id }];
+        }
+      } catch (e) {
+        console.warn("Could not find promo code:", discountCode);
+      }
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
@@ -72,7 +90,7 @@ export async function POST(request: NextRequest) {
       payment_method_types:  ["card"],
       customer_email:        customer?.email || undefined,
       line_items:            lineItems,
-      allow_promotion_codes: true,
+      allow_promotion_codes: false,
       success_url:           `${baseUrl}/success`,
       cancel_url:            `${baseUrl}/cancel`,
       metadata: {
@@ -82,6 +100,10 @@ export async function POST(request: NextRequest) {
         currency,
         shippingHandle: shippingHandle               || "",
       },
+     ...(discounts
+    ? { discounts }
+    : { allow_promotion_codes: true }
+  ),
     });
 
     return NextResponse.json({ url: session.url }, { headers: CORS_HEADERS });

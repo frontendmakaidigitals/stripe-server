@@ -100,13 +100,27 @@ export default function CheckoutClient({
     country: prefill.country || "AE",
     addresses: prefill.addresses ?? [],
   });
-
+  const COD_COUNTRIES = ["AE"];
+  const currentCountry = (() => {
+    if (hasAddresses && !useNewAddress && selectedAddressId) {
+      const addr = savedAddresses.find(
+        (a: ShopifyAddress) => a.id === selectedAddressId,
+      );
+      return addr?.country || customer.country;
+    }
+    return customer.country;
+  })();
+  const codAvailable = isCODAvailable(currentCountry);
+  function isCODAvailable(country: string): boolean {
+    return COD_COUNTRIES.includes(country.toUpperCase());
+  }
+  const COD_FEE_AED = 10;
   const shippingCost = selectedRate
     ? parseFloat(selectedRate.price.amount)
     : SHIPPING_RATE;
 
-  const codFee =
-    method === "cod" ? (total + shippingCost) * (COD_FEE_PERCENT / 100) : 0;
+  const codFee = method === "cod" && codAvailable ? COD_FEE_AED : 0;
+
   const grandTotal = total + shippingCost - discountAmount + codFee;
   async function fetchShippingRates(addr: CustomerInfo) {
     console.log("fetchShippingRates called with:", addr);
@@ -174,6 +188,11 @@ export default function CheckoutClient({
     }
     return customer;
   }
+  useEffect(() => {
+    if (currency.toUpperCase() !== "AED" && method === "cod") {
+      setMethod(null);
+    }
+  }, [currency, method]);
 
   async function startStripe() {
     setLoading(true);
@@ -189,6 +208,7 @@ export default function CheckoutClient({
           token: payload.token,
           shipping: shippingCost,
           shippingHandle: selectedRate?.handle,
+          discountCode: discountResult?.valid ? discountCode : undefined,
         }),
       });
       const data = await res.json();
@@ -418,12 +438,27 @@ export default function CheckoutClient({
 
                         {/* Country */}
                         <div className="relative">
-                          <select className="w-full border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm bg-white outline-none focus:border-[#1a1a1a] appearance-none transition-colors">
-                            <option>United Arab Emirates</option>
-                            <option>Saudi Arabia</option>
-                            <option>India</option>
-                            <option>Kuwait</option>
-                            <option>Qatar</option>
+                          <select
+                            className="w-full border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm bg-white outline-none focus:border-[#1a1a1a] appearance-none transition-colors"
+                            value={customer.country}
+                            onChange={(e) => {
+                              const countryMap: Record<string, string> = {
+                                "United Arab Emirates": "AE",
+                                "Saudi Arabia": "SA",
+                                India: "IN",
+                                Kuwait: "KW",
+                                Qatar: "QA",
+                              };
+                              const code =
+                                countryMap[e.target.value] ?? e.target.value;
+                              setCustomer((c) => ({ ...c, country: code }));
+                            }}
+                          >
+                            <option value="AE">United Arab Emirates</option>
+                            <option value="SA">Saudi Arabia</option>
+                            <option value="IN">India</option>
+                            <option value="KW">Kuwait</option>
+                            <option value="QA">Qatar</option>
                           </select>
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] pointer-events-none text-xs">
                             ▾
@@ -606,7 +641,7 @@ export default function CheckoutClient({
                         </div>
                       </label>
 
-                      {currency === "United Arab Emirates" && (
+                      {customer.country === "United Arab Emirates" && (
                         <label
                           className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${method === "cod" ? "bg-[#f5f5f5]" : "bg-white hover:bg-[#fafafa]"}`}
                         >
@@ -762,6 +797,12 @@ export default function CheckoutClient({
                 <div className="flex justify-between text-sm text-green-600">
                   <span>Discount ({discountResult.code})</span>
                   <span>− {fmt(discountAmount, currency)}</span>
+                </div>
+              )}
+              {method === "cod" && codFee > 0 && (
+                <div className="flex justify-between text-sm text-amber-600">
+                  <span>COD fee</span>
+                  <span>+ {fmt(codFee, "AED")}</span>
                 </div>
               )}
 
