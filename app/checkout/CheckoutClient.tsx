@@ -117,18 +117,23 @@ export default function CheckoutClient({
   });
   const COD_COUNTRIES = ["AE"];
   const currentCountry = (() => {
+    let raw: any;
     if (hasAddresses && !useNewAddress && selectedAddressId) {
       const addr = savedAddresses.find(
         (a: ShopifyAddress) => a.id === selectedAddressId,
       );
-      return addr?.country || customer.country;
+      raw = addr?.country || customer.country;
+    } else {
+      raw = customer.country;
     }
-    return customer.country;
+    // Guard: combobox may pass full object instead of string
+    return typeof raw === "object" && raw?.code ? raw.code : raw;
   })();
   const codAvailable = isCODAvailable(currentCountry);
-  function isCODAvailable(country: string | null): boolean {
-    if (!country) return false; // ✅ prevents crash
-    return COD_COUNTRIES.includes(country.toUpperCase());
+  function isCODAvailable(country: string | { code: string } | null): boolean {
+    if (!country) return false;
+    const code = typeof country === "object" ? country.code : country;
+    return COD_COUNTRIES.includes(code.toUpperCase());
   }
   const COD_FEE_AED = 10;
   const shippingCost = selectedRate
