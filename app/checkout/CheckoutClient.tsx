@@ -7,6 +7,14 @@ import type {
   CustomerInfo,
   ShopifyAddress,
 } from "../lib/checkout-token";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@/components/ui/combobox";
 import countriesLib from "i18n-iso-countries";
 import en from "i18n-iso-countries/langs/en.json";
 import Image from "next/image";
@@ -123,8 +131,8 @@ export default function CheckoutClient({
   }
   const COD_FEE_AED = 10;
   const shippingCost = selectedRate
-    ? parseFloat(selectedRate.price.amount) || 0 // ✅ guard against NaN
-    : 0; // ✅ 0 until a rate is selected, not a hardcoded fallback
+    ? parseFloat(selectedRate.price.amount) || 0
+    : 0;
 
   const codFee = method === "cod" && codAvailable ? COD_FEE_AED : 0;
 
@@ -447,25 +455,36 @@ export default function CheckoutClient({
 
                         {/* Country */}
                         <div className="relative">
-                          <select
-                            className="w-full border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm bg-white outline-none focus:border-[#1a1a1a] appearance-none transition-colors"
+                          <Combobox
                             value={customer.country}
-                            onChange={(e) =>
-                              setCustomer((c) => ({
+                            onValueChange={(value) => {
+                              if (!value) return;
+
+                              setCustomer((c: any) => ({
                                 ...c,
-                                country: e.target.value,
-                              }))
-                            }
+                                country: value,
+                              }));
+                            }}
                           >
-                            {countries.map((c) => (
-                              <option key={c.code} value={c.code}>
-                                {c.name}
-                              </option>
-                            ))}
-                          </select>
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] pointer-events-none text-xs">
-                            ▾
-                          </span>
+                            {/* INPUT */}
+                            <ComboboxInput
+                              placeholder="Select country..."
+                              className="w-full border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm outline-none focus:border-[#1a1a1a]"
+                            />
+
+                            {/* DROPDOWN */}
+                            <ComboboxContent className="max-h-72">
+                              <ComboboxList>
+                                <ComboboxEmpty>No country found.</ComboboxEmpty>
+
+                                {countries.map((c) => (
+                                  <ComboboxItem key={c.code} value={c.code}>
+                                    {c.name}
+                                  </ComboboxItem>
+                                ))}
+                              </ComboboxList>
+                            </ComboboxContent>
+                          </Combobox>
                         </div>
 
                         {/* Name row */}
