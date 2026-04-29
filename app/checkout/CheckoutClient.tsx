@@ -665,8 +665,8 @@ export default function CheckoutClient({
                                 {parseFloat(rate.price.amount) === 0
                                   ? "FREE"
                                   : fmt(
-                                      parseFloat(rate.price.amount),
-                                      rate.price.currencyCode,
+                                      parseFloat(rate.price.amount) * aedToBase, // ← convert
+                                      currency, // ← base currency
                                     )}
                               </span>
                             </label>
@@ -891,11 +891,7 @@ export default function CheckoutClient({
                   <span className="text-2xl font-bold">
                     {fmt(grandTotal, currency)}
                   </span>
-                  {shippingCurrency !== currency && shippingCost > 0 && (
-                    <p className="text-xs text-[#aaa] mt-0.5">
-                      excl. {fmt(shippingCost, shippingCurrency)} shipping
-                    </p>
-                  )}
+                  
                 </div>
               </div>
             </div>
