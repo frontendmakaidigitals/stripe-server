@@ -32,8 +32,8 @@ const CURRENCY_LOCALE: Record<string, string> = {
   USD: "en-US",
   EUR: "de-DE",
   CAD: "en-CA",
-  AED: "en-AE", // ✅ English numerals, AED symbol
-  SAR: "en-SA", // ✅ English numerals, SAR symbol
+  AED: "en-AE",
+  SAR: "en-SA",
 };
 
 function fmt(amount: number, currency: string) {
@@ -75,6 +75,79 @@ export default function CheckoutClient({
     code: string;
   } | null>(null);
   const [discountLoading, setDiscountLoading] = useState(false);
+
+  const [showAddressForm, setShowAddressForm] = useState(false);
+  const [newAddrSaving, setNewAddrSaving] = useState(false);
+  const [newAddrError, setNewAddrError] = useState("");
+  const [newAddr, setNewAddr] = useState({
+    firstName: "",
+    lastName: "",
+    address1: "",
+    city: "",
+    countryCode: "AE",
+    zip: "",
+    phone: "",
+  });
+  async function saveNewAddress() {
+    if (!newAddr.address1 || !newAddr.city || !newAddr.countryCode) {
+      setNewAddrError("Please fill in address, city, and country.");
+      return;
+    }
+    setNewAddrSaving(true);
+    setNewAddrError("");
+    try {
+      const res = await fetch("/api/customer/add-address", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId: customer.id,
+          address: newAddr,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to save address");
+
+      // Add the new address to local savedAddresses and select it
+      const saved = data.address;
+      const formatted: ShopifyAddress = {
+        id: String(saved.id),
+        name: `${newAddr.firstName} ${newAddr.lastName}`.trim(),
+        address1: saved.address1,
+        address2: saved.address2 || "",
+        city: saved.city,
+        country: saved.country,
+        phone: saved.phone || "",
+        is_default: false,
+      };
+      // Mutate local copy so it appears in the list immediately
+      savedAddresses.push(formatted);
+      setSelectedId(formatted.id);
+      setShowAddressForm(false);
+      setNewAddr({
+        firstName: "",
+        lastName: "",
+        address1: "",
+        city: "",
+        countryCode: "AE",
+        zip: "",
+        phone: "",
+      });
+      // Fetch shipping for new address
+      fetchShippingRates({
+        ...customer,
+        address: formatted.address1,
+        city: formatted.city,
+        country: formatted.country,
+        phone: formatted.phone,
+      });
+    } catch (err: unknown) {
+      setNewAddrError(
+        err instanceof Error ? err.message : "Could not save address",
+      );
+    } finally {
+      setNewAddrSaving(false);
+    }
+  }
   const countries = Object.entries(countriesLib.getNames("en")).map(
     ([code, name]) => ({
       code,
@@ -446,27 +519,168 @@ export default function CheckoutClient({
                             </label>
                           ))}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const domain =
-                              process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN;
+                        {!showAddressForm ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowAddressForm(true)}
+                            className="text-sm text-[#1a6cff] hover:underline flex items-center gap-1"
+                          >
+                            + Add a new address
+                          </button>
+                        ) : (
+                          <div className="mt-3 flex flex-col gap-3 border border-gray-200 rounded-lg p-4 bg-white">
+                            <p className="text-sm font-medium text-[#1a1a1a]">
+                              New address
+                            </p>
 
-                            if (!domain) {
-                              console.error("Shopify domain not set");
-                              return;
-                            }
+                            {/* Country */}
+                            <Combobox
+                              items={countries}
+                              value={
+                                countriesLib.getName(
+                                  newAddr.countryCode,
+                                  "en",
+                                ) ?? newAddr.countryCode
+                              }
+                              onValueChange={(value: any) => {
+                                const name =
+                                  typeof value === "object" && value?.name
+                                    ? value.name
+                                    : value;
+                                const code = toCountryCode(name);
+                                setNewAddr((a) => ({
+                                  ...a,
+                                  countryCode: code,
+                                }));
+                              }}
+                            >
+                              <ComboboxInput
+                                placeholder="Select country..."
+                                className="w-full rounded-sm! border bg-white border-gray-300 h-11.5! text-sm outline-none focus:border-[#1a1a1a]"
+                              />
+                              <ComboboxContent className="rounded-md! max-h-72">
+                                <ComboboxEmpty>No country found.</ComboboxEmpty>
+                                <ComboboxList>
+                                  {(item) => (
+                                    <ComboboxItem
+                                      value={item.name}
+                                      key={item.code}
+                                      className="rounded-md! py-3"
+                                    >
+                                      {item.name}
+                                    </ComboboxItem>
+                                  )}
+                                </ComboboxList>
+                              </ComboboxContent>
+                            </Combobox>
 
-                            const url = domain.startsWith("http")
-                              ? domain
-                              : `https://${domain}`;
+                            {/* Name */}
+                            <div className="flex gap-3">
+                              <input
+                                className="flex-1 border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm outline-none focus:border-[#1a1a1a]"
+                                placeholder="First name"
+                                value={newAddr.firstName}
+                                onChange={(e) =>
+                                  setNewAddr((a) => ({
+                                    ...a,
+                                    firstName: e.target.value,
+                                  }))
+                                }
+                              />
+                              <input
+                                className="flex-1 border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm outline-none focus:border-[#1a1a1a]"
+                                placeholder="Last name"
+                                value={newAddr.lastName}
+                                onChange={(e) =>
+                                  setNewAddr((a) => ({
+                                    ...a,
+                                    lastName: e.target.value,
+                                  }))
+                                }
+                              />
+                            </div>
 
-                            window.location.href = `${url.replace(/\/$/, "")}/account/addresses`;
-                          }}
-                          className="text-sm text-[#1a6cff] hover:underline flex items-center gap-1"
-                        >
-                          + Use a different address
-                        </button>
+                            {/* Address */}
+                            <input
+                              className="w-full border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm outline-none focus:border-[#1a1a1a]"
+                              placeholder="Address"
+                              value={newAddr.address1}
+                              onChange={(e) =>
+                                setNewAddr((a) => ({
+                                  ...a,
+                                  address1: e.target.value,
+                                }))
+                              }
+                            />
+
+                            {/* City + Zip */}
+                            <div className="flex gap-3">
+                              <input
+                                className="flex-1 border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm outline-none focus:border-[#1a1a1a]"
+                                placeholder="City"
+                                value={newAddr.city}
+                                onChange={(e) =>
+                                  setNewAddr((a) => ({
+                                    ...a,
+                                    city: e.target.value,
+                                  }))
+                                }
+                              />
+                              <input
+                                className="flex-1 border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm outline-none focus:border-[#1a1a1a]"
+                                placeholder="Postal code (optional)"
+                                value={newAddr.zip}
+                                onChange={(e) =>
+                                  setNewAddr((a) => ({
+                                    ...a,
+                                    zip: e.target.value,
+                                  }))
+                                }
+                              />
+                            </div>
+
+                            {/* Phone */}
+                            <input
+                              className="w-full border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm outline-none focus:border-[#1a1a1a]"
+                              placeholder="Phone"
+                              type="tel"
+                              value={newAddr.phone}
+                              onChange={(e) =>
+                                setNewAddr((a) => ({
+                                  ...a,
+                                  phone: e.target.value,
+                                }))
+                              }
+                            />
+
+                            {newAddrError && (
+                              <p className="text-sm text-red-500">
+                                {newAddrError}
+                              </p>
+                            )}
+
+                            <div className="flex gap-3 mt-1">
+                              <button
+                                type="button"
+                                onClick={saveNewAddress}
+                                disabled={newAddrSaving}
+                                className="flex-1 bg-primary text-white rounded-[6px] py-2.5 text-sm font-semibold disabled:bg-gray-400"
+                              >
+                                {newAddrSaving ? "Saving…" : "Save address"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowAddressForm(false);
+                                  setNewAddrError("");
+                                }}
+                                className="flex-1 border border-gray-300 rounded-[6px] py-2.5 text-sm font-medium text-[#555]"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
 
