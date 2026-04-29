@@ -42,42 +42,19 @@ export default async function CheckoutPage({ searchParams }: PageProps) {
 function TokenError({ message }: { message: string }) {
   const storeUrl = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN
     ? `https://${process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN}`
-    : "https://perfumeoasis.ae"; // fallback
+    : "https://perfumeoasis.ae";
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        fontFamily: "'DM Sans', sans-serif",
-        background: "#f9f9f7",
-        gap: 16,
-        padding: 32,
-        textAlign: "center",
-      }}
-    >
-      <div style={{ fontSize: 48 }}>🔒</div>
-      <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>
-        Session Unavailable
-      </h2>
-      <p style={{ color: "#666", fontSize: 15, maxWidth: 380, margin: 0 }}>
-        {message}
-      </p>
+    <div className="min-h-screen flex flex-col items-center justify-center font-[DM_Sans,sans-serif] bg-[#f9f9f7] gap-4 p-8 text-center">
+      <div className="text-[48px]">🔒</div>
+
+      <h2 className="text-[22px] font-bold m-0">Session Unavailable</h2>
+
+      <p className="text-[#666] text-[15px] max-w-[380px] m-0">{message}</p>
+
       <a
         href={storeUrl}
-        style={{
-          marginTop: 8,
-          padding: "12px 24px",
-          background: "#111",
-          color: "#fff",
-          borderRadius: 8,
-          textDecoration: "none",
-          fontWeight: 600,
-          fontSize: 14,
-        }}
+        className="mt-2 px-6 py-3 bg-[#111] text-white rounded-lg no-underline font-semibold text-sm"
       >
         ← Back to Store
       </a>

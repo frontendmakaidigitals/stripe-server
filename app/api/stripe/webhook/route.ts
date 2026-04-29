@@ -1,21 +1,18 @@
-
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import type { CustomerInfo, CartItem } from "@/app/lib/checkout-token";
+import { verifyCheckoutToken } from "@/app/lib/checkout-token";
 import { markTokenUsed } from "@/app/lib/used-tokens";
+
 export const runtime = "nodejs";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2026-04-22.dahlia",
 });
 
-// ─── Raw body ─────────────────────────────────────────────────────────────────
-
 async function getRawBody(request: NextRequest): Promise<Buffer> {
   return Buffer.from(await request.arrayBuffer());
 }
-
-// ─── Shopify order creation ───────────────────────────────────────────────────
 
 async function createShopifyOrder(
   items: CartItem[],
@@ -43,21 +40,20 @@ async function createShopifyOrder(
       ? { variant_id: parseInt(item.variant_id, 10), quantity: item.quantity }
       : {
           title:             item.product_title,
-          price:             (item.price / 100).toFixed(2),
+          price:             item.price.toFixed(2),  // ✅ already decimal, no /100
           quantity:          item.quantity,
           requires_shipping: true,
           taxable:           false,
         },
   );
 
-  // Create draft order
   const draftRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders.json`,
     {
       method:  "POST",
       headers: {
         "X-Shopify-Access-Token": token,
-        "Content-Type":          "application/json",
+        "Content-Type":           "application/json",
       },
       body: JSON.stringify({
         draft_order: {
@@ -67,7 +63,7 @@ async function createShopifyOrder(
           billing_address:  address,
           note:             `Paid via Stripe. Session: ${stripeSessionId}`,
           tags:             "Stripe, custom-checkout",
-          send_receipt:     true,  // Shopify sends confirmation email
+          send_receipt:     true,
         },
       }),
     },
@@ -79,14 +75,13 @@ async function createShopifyOrder(
 
   const { draft_order: draft } = await draftRes.json();
 
-  // Complete the draft — marks as paid, deducts inventory, triggers fulfillment
   const completeRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders/${draft.id}/complete.json?payment_pending=false`,
     {
       method:  "PUT",
       headers: {
         "X-Shopify-Access-Token": token,
-        "Content-Type":          "application/json",
+        "Content-Type":           "application/json",
       },
     },
   );
@@ -97,43 +92,49 @@ async function createShopifyOrder(
   }
 
   const { draft_order: completed } = await completeRes.json();
-  return completed.name; // e.g. "#1043"
+  return completed.name;
 }
 
-// ─── Fulfillment handler ──────────────────────────────────────────────────────
-
 async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
-  const meta = session.metadata ?? {};
+  const meta     = session.metadata ?? {};
+  const token    = meta.token;
+  const currency = meta.currency || "AED";
 
-  // Parse customer and items stored in Stripe session metadata
-  // (your create-checkout route must store these — see note below)
   let customer: CustomerInfo;
   let items: CartItem[];
 
-  try {
-    customer = JSON.parse(meta.customer || "{}");
-    items    = JSON.parse(meta.items    || "[]");
-  } catch {
-    console.error("Could not parse metadata from Stripe session:", session.id);
-    return;
+  if (token) {
+    // ✅ Primary path — verify token to get full order data
+    try {
+      const payload = await verifyCheckoutToken(token);
+      customer = payload.customer;
+      items    = payload.items;
+    } catch (err) {
+      console.error("Could not verify checkout token:", err);
+      return;
+    }
+  } else {
+    // Fallback for any old sessions
+    try {
+      customer = JSON.parse(meta.customer || "{}");
+      items    = JSON.parse(meta.items    || "[]");
+    } catch {
+      console.error("Could not parse metadata from Stripe session:", session.id);
+      return;
+    }
   }
 
   if (!items.length) {
-    console.warn("No items in Stripe session metadata. Skipping Shopify order.");
+    console.warn("No items found. Skipping Shopify order.");
     return;
   }
-
-  const currency = meta.currency || "AED";
 
   try {
     const orderName = await createShopifyOrder(items, customer, currency, session.id);
     console.log(`✅ Shopify order ${orderName} created for Stripe session ${session.id}`);
-    const token = meta.token;
-if (token) markTokenUsed(token);
+    if (token) markTokenUsed(token);
   } catch (err) {
-    // Log but don't re-throw — payment already succeeded, don't panic
     console.error("Failed to create Shopify order after Stripe payment:", err);
-    // TODO: push to a dead-letter queue or alert so you can create it manually
   }
 }
 
@@ -142,10 +143,7 @@ async function handlePaymentFailed(session: Stripe.Checkout.Session) {
     sessionId:     session.id,
     customerEmail: session.customer_email,
   });
-  // Optionally: send a "payment failed" email to the customer
 }
-
-// ─── Webhook route ────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
   const rawBody = await getRawBody(request);
@@ -157,11 +155,7 @@ export async function POST(request: NextRequest) {
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(
-      rawBody,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET!,
-    );
+    event = stripe.webhooks.constructEvent(rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET!);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Signature mismatch";
     console.error("Webhook signature verification failed:", msg);
@@ -172,29 +166,23 @@ export async function POST(request: NextRequest) {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        if (session.payment_status === "paid") {
-          await handleSuccessfulPayment(session);
-        }
+        if (session.payment_status === "paid") await handleSuccessfulPayment(session);
         break;
       }
       case "checkout.session.async_payment_succeeded": {
-        const session = event.data.object as Stripe.Checkout.Session;
-        await handleSuccessfulPayment(session);
+        await handleSuccessfulPayment(event.data.object as Stripe.Checkout.Session);
         break;
       }
       case "checkout.session.async_payment_failed":
       case "payment_intent.payment_failed": {
-        const session = event.data.object as Stripe.Checkout.Session;
-        await handlePaymentFailed(session);
+        await handlePaymentFailed(event.data.object as Stripe.Checkout.Session);
         break;
       }
       default:
         console.log("Unhandled Stripe event:", event.type);
     }
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Fulfillment error";
-    console.error("Webhook fulfillment error:", msg);
-    // Always return 200 after signature passes — prevents Stripe retrying
+    console.error("Webhook fulfillment error:", err instanceof Error ? err.message : err);
   }
 
   return NextResponse.json({ received: true });

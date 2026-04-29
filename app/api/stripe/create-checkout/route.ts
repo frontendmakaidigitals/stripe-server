@@ -1,14 +1,7 @@
-// app/api/stripe/create-checkout/route.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// Creates a Stripe checkout session.
-// Stores customer + cart items in session metadata so the webhook
-// can create the Shopify order after payment succeeds.
-// ─────────────────────────────────────────────────────────────────────────────
-
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import type { CartItem, CustomerInfo } from "@/app/lib/checkout-token";
- 
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2026-04-22.dahlia",
 });
@@ -30,7 +23,17 @@ export async function POST(request: NextRequest) {
       items,
       currency = "aed",
       customer,
-    }: { items: CartItem[]; currency: string; customer: CustomerInfo } = body;
+      token,
+      shipping,
+      shippingHandle,
+    }: {
+      items: CartItem[];
+      currency: string;
+      customer: CustomerInfo;
+      token?: string;
+      shipping?: number;
+      shippingHandle?: string;
+    } = body;
 
     if (!items?.length) {
       return NextResponse.json({ error: "No items" }, { status: 400, headers: CORS_HEADERS });
@@ -38,31 +41,46 @@ export async function POST(request: NextRequest) {
 
     const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
 
-    const session = await stripe.checkout.sessions.create({
-      mode:                 "payment",
-      payment_method_types: ["card"],
-      customer_email:       customer?.email || undefined,
-      line_items: items.map((item) => ({
-        price_data: {
-          currency:     currency.toLowerCase(),
-          product_data: {
-            name:   item.product_title,
-            images: item.image ? [item.image] : [],
-          },
-          unit_amount: Math.round(item.price * 100),
+    const lineItems = items.map((item) => ({
+      price_data: {
+        currency: currency.toLowerCase(),
+        product_data: {
+          name:   item.product_title,
+          images: item.image ? [item.image] : [],
         },
-        quantity: item.quantity,
-      })),
+        unit_amount: Math.round(item.price * 100),
+      },
+      quantity: item.quantity,
+    }));
+
+    if (shipping && shipping > 0) {
+      lineItems.push({
+        price_data: {
+          currency: currency.toLowerCase(),
+          product_data: {
+        name: "Shipping",
+        images: [],     
+      },
+          unit_amount: Math.round(shipping * 100),
+        },
+        quantity: 1,
+      });
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode:                  "payment",
+      payment_method_types:  ["card"],
+      customer_email:        customer?.email || undefined,
+      line_items:            lineItems,
       allow_promotion_codes: true,
       success_url:           `${baseUrl}/success`,
       cancel_url:            `${baseUrl}/cancel`,
-
-      // ── Store everything the webhook needs to create the Shopify order ──
-      // Stripe metadata values must be strings and total < 8KB
       metadata: {
-        customer: JSON.stringify((() => { const { addresses, ...rest } = customer || {}; return rest; })()),
-        items:    JSON.stringify(items),
+        token:          token                        || "",
+        customerName:   (customer?.name  || "").slice(0, 100),
+        customerEmail:  (customer?.email || "").slice(0, 100),
         currency,
+        shippingHandle: shippingHandle               || "",
       },
     });
 
