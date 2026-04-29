@@ -326,6 +326,8 @@ export default function CheckoutClient({
           shipping: shippingCost,
           shippingHandle: selectedRate?.handle,
           discountCode: discountResult?.valid ? discountCode : undefined,
+          discountAmount: discountResult?.valid ? discountAmount : 0, // ← add
+          discountType: discountResult?.valid ? discountResult.type : null, // ← add
         }),
       });
       const data = await res.json();
@@ -349,9 +351,12 @@ export default function CheckoutClient({
           currency,
           customer: getOrderCustomer(),
           token: payload.token,
-          shipping: shippingCost,
-          codFee,
+          shipping: shippingCostAED, // ← raw AED for Shopify order
+          codFee: codFeeAED, // ← raw AED for Shopify order
           shippingHandle: selectedRate?.handle,
+          discountCode: discountResult?.valid ? discountCode : undefined, // ← add
+          discountAmount: discountResult?.valid ? discountAmount : 0, // ← add
+          discountType: discountResult?.valid ? discountResult.type : null, // ← add
         }),
       });
       const data = await res.json();
