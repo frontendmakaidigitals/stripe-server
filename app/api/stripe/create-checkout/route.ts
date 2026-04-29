@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
         ? { discounts }
         : { allow_promotion_codes: false }),
       success_url: `${baseUrl}/success`,
-       cancel_url: cancelUrl || `${baseUrl}/checkout`,
+      cancel_url: cancelUrl ?? `${baseUrl}/checkout${token ? `?token=${token}` : ""}`,
       metadata: {
         token: token || "",
         customerName: (customer?.name || "").slice(0, 100),
