@@ -294,7 +294,7 @@ export default function CheckoutClient({
                       <div className="flex items-center justify-between mb-4">
                         <h2 className="text-lg font-semibold">Contact</h2>
                         <a
-                          href="/login"
+                          href={`${process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN}/account/login`}
                           className="text-sm text-[#1a6cff] hover:underline"
                         >
                           Sign in
@@ -302,8 +302,8 @@ export default function CheckoutClient({
                       </div>
                       <input
                         className="w-full border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm outline-none focus:border-[#1a1a1a] transition-colors"
-                        type="text"
-                        placeholder="Email or mobile phone number"
+                        type="email"
+                        placeholder="Email"
                         value={customer.email}
                         onChange={(e) =>
                           setCustomer((c) => ({ ...c, email: e.target.value }))
