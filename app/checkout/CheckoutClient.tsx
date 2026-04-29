@@ -148,12 +148,11 @@ export default function CheckoutClient({
       setNewAddrSaving(false);
     }
   }
-  const countries = Object.entries(countriesLib.getNames("en")).map(
-    ([code, name]) => ({
-      code,
-      name,
-    }),
-  );
+  const GCC_COUNTRIES = ["KW", "AE", "BH", "OM", "QA", "SA"];
+
+  const countries = Object.entries(countriesLib.getNames("en"))
+    .filter(([code]) => GCC_COUNTRIES.includes(code))
+    .map(([code, name]) => ({ code, name }));
   // Add discount calculation
   const discountAmount = discountResult?.valid
     ? discountResult.type === "percentage"
