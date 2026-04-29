@@ -48,17 +48,17 @@ export async function POST(request: NextRequest) {
     const curr = currency.toLowerCase();
     const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
 
-   const lineItems = items.map((item) => ({
-  price_data: {
-    currency: curr,
-    product_data: {
-      name: item.product_title,
-      images: item.image ? [item.image] : [],
-    },
-    unit_amount: Math.round(item.price * 100),
-  },
-  quantity: item.quantity,
-}));
+    const lineItems = items.map((item) => ({
+      price_data: {
+        currency: curr,
+        product_data: {
+          name: item.product_title,
+          images: item.image ? [item.image] : [],
+        },
+        unit_amount: Math.round(item.price * 100),
+      },
+      quantity: item.quantity,
+    }));
 
     if (shipping && shipping > 0) {
       lineItems.push({
@@ -71,30 +71,25 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Calculate the actual discount amount in display currency
-    let resolvedDiscountAmount = 0;
-    if (discountAmount && discountAmount > 0) {
-      resolvedDiscountAmount = discountAmount;
-    } else if (discountType === "percentage" && discountAmount) {
-      // discountAmount is the percentage value (e.g. 20 for 20%)
-      const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-      resolvedDiscountAmount = (subtotal * discountAmount) / 100;
-    }
-
-    // Add discount as a NEGATIVE line item — most reliable approach in Stripe
-    // Works for any currency, any discount type, no coupon API needed
-    if (resolvedDiscountAmount > 0 && discountCode) {
-      lineItems.push({
-        price_data: {
+    // Build coupon using amount_off (in cents) for both percentage and fixed types.
+    // discountAmount is always the pre-calculated value in display currency
+    // (e.g. 20% of $478.17 = $95.63 — frontend already computed this).
+    let discounts: { coupon: string }[] | undefined;
+    if (discountCode && discountAmount && discountAmount > 0) {
+      try {
+        const amountOffCents = Math.round(discountAmount * 100);
+        const coupon = await stripe.coupons.create({
+          name: discountCode.toUpperCase(),
+          amount_off: amountOffCents,   // always use amount_off, never percent_off
           currency: curr,
-          product_data: {
-            name: `Discount (${discountCode.toUpperCase()})`,
-            images: [],
-          },
-          unit_amount: -Math.round(resolvedDiscountAmount * 100), // ← negative amount
-        },
-        quantity: 1,
-      });
+          duration: "once",
+          max_redemptions: 1,
+        });
+        discounts = [{ coupon: coupon.id }];
+        console.log(`[Stripe] Coupon created: ${coupon.id} — ${amountOffCents} cents off`);
+      } catch (e) {
+        console.warn("[Stripe] Could not create coupon:", e);
+      }
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -102,7 +97,9 @@ export async function POST(request: NextRequest) {
       payment_method_types: ["card"],
       customer_email: customer?.email || undefined,
       line_items: lineItems,
-      allow_promotion_codes: false,
+      ...(discounts
+        ? { discounts }
+        : { allow_promotion_codes: false }),
       success_url: `${baseUrl}/success`,
       cancel_url: `${baseUrl}/cancel`,
       metadata: {
