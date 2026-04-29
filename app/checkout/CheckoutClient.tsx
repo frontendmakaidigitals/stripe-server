@@ -20,10 +20,10 @@ type ShippingRate = {
 };
 const CURRENCY_LOCALE: Record<string, string> = {
   USD: "en-US",
-  EUR: "de-DE", // 227,28 € style
+  EUR: "de-DE",
   CAD: "en-CA",
-  AED: "ar-AE",
-  SAR: "ar-SA",
+  AED: "en-AE", // ✅ English numerals, AED symbol
+  SAR: "en-SA", // ✅ English numerals, SAR symbol
 };
 
 function fmt(amount: number, currency: string) {
@@ -116,14 +116,13 @@ export default function CheckoutClient({
   }
   const COD_FEE_AED = 10;
   const shippingCost = selectedRate
-    ? parseFloat(selectedRate.price.amount)
-    : SHIPPING_RATE;
+    ? parseFloat(selectedRate.price.amount) || 0 // ✅ guard against NaN
+    : 0; // ✅ 0 until a rate is selected, not a hardcoded fallback
 
   const codFee = method === "cod" && codAvailable ? COD_FEE_AED : 0;
 
   const grandTotal = total + shippingCost - discountAmount + codFee;
   async function fetchShippingRates(addr: CustomerInfo) {
-    console.log("fetchShippingRates called with:", addr);
     if (!addr.address || !addr.city || !addr.country) return;
     setRatesLoading(true);
     try {
@@ -577,32 +576,42 @@ export default function CheckoutClient({
                           const isSelected =
                             selectedRate?.handle === rate.handle;
                           return (
-                            <div
+                            <label
                               key={rate.handle}
-                              onClick={() => setSelectedRate(rate)}
-                              className={`flex items-start justify-between gap-4 px-4 py-4 cursor-pointer transition border-b last:border-b-0 ${
+                              className={`flex items-center justify-between gap-4 px-4 py-4 cursor-pointer transition border-b last:border-b-0 ${
                                 isSelected
-                                  ? "bg-[#f5f7ff] border-l-4 border-[#1a1a1a]"
+                                  ? "bg-[#f0f4ff]"
                                   : "bg-white hover:bg-[#fafafa]"
                               }`}
                             >
-                              <div className="flex flex-col text-sm">
-                                <span className="font-medium text-[#1a1a1a]">
-                                  {rate.title}
-                                </span>
-                                {rate.estimatedDays && (
-                                  <span className="text-neutral-500 text-xs mt-0.5">
-                                    {rate.estimatedDays}
+                              <div className="flex items-center gap-3">
+                                <input
+                                  type="radio"
+                                  name="shippingRate"
+                                  checked={isSelected}
+                                  onChange={() => setSelectedRate(rate)}
+                                  className="w-4 h-4 accent-[#1a1a1a]"
+                                />
+                                <div className="flex flex-col text-sm">
+                                  <span className="font-medium text-[#1a1a1a]">
+                                    {rate.title}
                                   </span>
-                                )}
+                                  {rate.estimatedDays && (
+                                    <span className="text-neutral-500 text-xs mt-0.5">
+                                      {rate.estimatedDays}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                               <span className="text-sm font-semibold shrink-0">
-                                {fmt(
-                                  parseFloat(rate.price.amount),
-                                  rate.price.currencyCode,
-                                )}
+                                {parseFloat(rate.price.amount) === 0
+                                  ? "FREE"
+                                  : fmt(
+                                      parseFloat(rate.price.amount),
+                                      rate.price.currencyCode,
+                                    )}
                               </span>
-                            </div>
+                            </label>
                           );
                         })}
                       </div>
@@ -641,7 +650,7 @@ export default function CheckoutClient({
                         </div>
                       </label>
 
-                      {customer.country === "United Arab Emirates" && (
+                      {codAvailable && (
                         <label
                           className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${method === "cod" ? "bg-[#f5f5f5]" : "bg-white hover:bg-[#fafafa]"}`}
                         >
