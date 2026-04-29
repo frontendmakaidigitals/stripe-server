@@ -1,61 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-type Country = {
-  code: string;
-  name: string;
-};
-
-type ShippingRate = {
-  id?: number | string;
-  name?: string;
-  price?: string;
-  min_order_subtotal?: string | null;
-  max_order_subtotal?: string | null;
-};
-
-type ShippingZone = {
-  name: string;
-  countries?: Country[];
-  price_based_shipping_rates?: ShippingRate[];
-  weight_based_shipping_rates?: ShippingRate[];
-};
-const COUNTRY_NAMES: Record<string, string> = {
-  AE: "United Arab Emirates",
-  SA: "Saudi Arabia",
-  IN: "India",
-  KW: "Kuwait",
-  QA: "Qatar",
-  US: "United States",
-  GB: "United Kingdom",
-  PK: "Pakistan",
-  OM: "Oman",
-  BH: "Bahrain",
-  EG: "Egypt",
-  DE: "Germany",
-  FR: "France",
-  IT: "Italy",
-  ES: "Spain",
-  NL: "Netherlands",
-  BE: "Belgium",
-  AT: "Austria",
-  CH: "Switzerland",
-  SE: "Sweden",
-  NO: "Norway",
-  DK: "Denmark",
-  FI: "Finland",
-  PT: "Portugal",
-  PL: "Poland",
-  CZ: "Czech Republic",
-  RO: "Romania",
-  BG: "Bulgaria",
-  CY: "Cyprus",
-  CA: "Canada",
-  AU: "Australia",
-  NZ: "New Zealand",
-  JP: "Japan",
-  SG: "Singapore",
-  BR: "Brazil",
-  ZA: "South Africa",
-};
 
 const DELIVERY_ESTIMATES: Record<string, string> = {
   "Standard": "14 business days",
@@ -63,36 +6,29 @@ const DELIVERY_ESTIMATES: Record<string, string> = {
   "Overnight": "Next business day",
   "Economy": "21-28 business days",
   "Free Shipping": "Free for orders over AED 351",
-  "Same Day Delivery (Dubai) Order Before 2PM (Except weekends & Public holidays)": "Same day (order before 2PM)",
+  "Same Day Delivery (Dubai) Order Before 2PM (Except weekends & Public holidays)":
+    "Same day (order before 2PM)",
   "AUT": "14 business days",
-  "Aramex": "Calculated transit time",
 };
 
 export async function POST(req: NextRequest) {
   try {
     const { address } = await req.json();
 
-    // Normalise to 2-letter ISO code
     const countryCode =
       address.country.length === 2
         ? address.country.toUpperCase()
-        : Object.keys(COUNTRY_NAMES).find(
-            (k) =>
-              COUNTRY_NAMES[k].toLowerCase() ===
-              address.country.toLowerCase()
-          ) ?? address.country;
+        : address.country.toUpperCase();
 
-    const countryName =
-      COUNTRY_NAMES[countryCode] ?? address.country;
-
+    const orderSubtotalAED: number = address.subtotalAED ?? 0;
     const domain = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN!;
     const adminToken = process.env.SHOPIFY_ACCESS_TOKEN!;
 
-    // Also send the subtotal so we can evaluate conditional rates
-    const orderSubtotalAED: number = address.subtotalAED ?? 0;
+    console.log(`[Shipping] Looking up rates for country=${countryCode} subtotal=${orderSubtotalAED}`);
 
+    // ── delivery_profiles returns rates from ALL profiles (default + custom) ──
     const res = await fetch(
-      `https://${domain}/admin/api/2024-01/shipping_zones.json`,
+      `https://${domain}/admin/api/2024-01/delivery_profiles.json`,
       {
         headers: {
           "X-Shopify-Access-Token": adminToken,
@@ -102,41 +38,13 @@ export async function POST(req: NextRequest) {
     );
 
     if (!res.ok) {
-      console.error("[Shipping] Shopify API error:", res.status, await res.text());
+      const text = await res.text();
+      console.error("[Shipping] delivery_profiles API error:", res.status, text);
       return NextResponse.json({ rates: [] });
     }
 
-    const data = await res.json();
-   const zones: ShippingZone[] = data?.shipping_zones ?? [];
-
-    console.log(
-      `[Shipping] Total zones: ${zones.length}`,
-      zones.map((z) => `${z.name} (${z.countries?.map((c: any) => c.code).join(", ")})`)
-    );
-
-    // Find the zone that contains this country
-    const matchingZone = zones.find((zone: any) =>
-      zone.countries?.some(
-        (c: any) =>
-          c.code?.toUpperCase() === countryCode ||
-          c.name?.toLowerCase() === countryName.toLowerCase()
-      )
-    );
-
-    if (!matchingZone) {
-      console.log(`[Shipping] No zone for: ${countryCode} (${countryName})`);
-      return NextResponse.json({ rates: [] });
-    }
-
-    console.log(`[Shipping] Matched zone: "${matchingZone.name}" for ${countryCode}`);
-
-    // ── 1. Price-based rates (most common — Standard, Free Shipping, Same Day) ──
-    const priceBased: any[] = matchingZone.price_based_shipping_rates ?? [];
-    // ── 2. Weight-based rates ──
-    const weightBased: any[] = matchingZone.weight_based_shipping_rates ?? [];
-    // ── 3. Carrier-calculated (Aramex, etc.) — skip; no price available at this stage ──
-    // carrier_shipping_rate_providers have no fixed price, so we omit them
-    // to avoid showing "Calculated" with no amount
+    const { delivery_profiles } = await res.json();
+    console.log(`[Shipping] Found ${delivery_profiles?.length ?? 0} profiles`);
 
     const rates: {
       handle: string;
@@ -145,75 +53,85 @@ export async function POST(req: NextRequest) {
       price: { amount: string; currencyCode: string };
     }[] = [];
 
-    // Process price-based rates
-    for (const rate of priceBased) {
-      const price = parseFloat(String(rate.price ?? "0")) || 0;
+    for (const profile of delivery_profiles ?? []) {
+      for (const group of profile.profile_location_groups ?? []) {
+        for (const zoneEntry of group.location_group_zones ?? []) {
+          const zone = zoneEntry.zone;
 
-      // Enforce min-order conditions
-      // Shopify stores min_order_subtotal as a string like "351.00" or null
-      const minSubtotal = rate.min_order_subtotal
-        ? parseFloat(rate.min_order_subtotal)
-        : null;
-      const maxSubtotal = rate.max_order_subtotal
-        ? parseFloat(rate.max_order_subtotal)
-        : null;
+          // Check if this zone covers the requested country
+          const countryInZone = zone.countries?.some(
+            (c: any) => c.code?.toUpperCase() === countryCode
+          );
 
-      // If the zone currency is AED and we have a subtotal, skip rates whose
-      // conditions aren't met. (When subtotal is unknown we show all rates.)
-      if (orderSubtotalAED > 0) {
-        if (minSubtotal !== null && orderSubtotalAED < minSubtotal) {
-          console.log(`[Shipping] Skipping "${rate.name}" — subtotal ${orderSubtotalAED} < min ${minSubtotal}`);
-          continue;
-        }
-        if (maxSubtotal !== null && orderSubtotalAED > maxSubtotal) {
-          console.log(`[Shipping] Skipping "${rate.name}" — subtotal ${orderSubtotalAED} > max ${maxSubtotal}`);
-          continue;
+          if (!countryInZone) continue;
+
+          console.log(
+            `[Shipping] Matched zone "${zone.name}" in profile "${profile.name}"`,
+            `— methods: ${zoneEntry.method_definitions?.length ?? 0}`
+          );
+
+          // Log the raw method_definitions so we can see what Shopify returns
+          console.log(
+            "[Shipping] Raw methods:",
+            JSON.stringify(zoneEntry.method_definitions, null, 2)
+          );
+
+          for (const method of zoneEntry.method_definitions ?? []) {
+            // Price lives at method.rate_provider.price.amount (flat rate)
+            // or method.rate_provider.shipping_rate.price for carrier rates
+            const flatPrice =
+              method.rate_provider?.price?.amount ??
+              method.rate_provider?.shipping_rate?.price?.amount ??
+              null;
+
+            if (flatPrice === null) {
+              // Carrier-calculated — no fixed price, skip
+              console.log(`[Shipping] Skip carrier rate: ${method.name}`);
+              continue;
+            }
+
+            const priceNum = parseFloat(String(flatPrice)) || 0;
+
+            // Enforce min/max order subtotal conditions
+            const cond = method.price_condition;
+            if (cond && orderSubtotalAED > 0) {
+              const min = cond.subtotal_minimum?.amount != null
+                ? parseFloat(String(cond.subtotal_minimum.amount))
+                : null;
+              const max = cond.subtotal_maximum?.amount != null
+                ? parseFloat(String(cond.subtotal_maximum.amount))
+                : null;
+
+              if (min !== null && orderSubtotalAED < min) {
+                console.log(`[Shipping] Skip "${method.name}" — subtotal ${orderSubtotalAED} < min ${min}`);
+                continue;
+              }
+              if (max !== null && orderSubtotalAED > max) {
+                console.log(`[Shipping] Skip "${method.name}" — subtotal ${orderSubtotalAED} > max ${max}`);
+                continue;
+              }
+            }
+
+            rates.push({
+              handle: method.id?.toString() ?? method.name,
+              title: method.name ?? "Standard Shipping",
+              estimatedDays: DELIVERY_ESTIMATES[method.name] ?? null,
+              price: {
+                amount: priceNum.toFixed(2),
+                currencyCode: "AED",
+              },
+            });
+          }
         }
       }
- console.log("Zones:", JSON.stringify(zones.map(z => ({
-  name: z.name,
-  countries: z.countries?.map(c => c.code)
-})), null, 2));
-
-
-      rates.push({
-        handle: rate.id?.toString() ?? rate.name,
-        title: rate.name ?? "Standard Shipping",
-        estimatedDays: DELIVERY_ESTIMATES[rate.name] ?? null,
-        price: {
-          amount: price.toFixed(2),
-          currencyCode: "AED",
-        },
-      });
-    }
-  console.log("All zones:", JSON.stringify(zones.map((z: any) => ({
-    name: z.name,
-    countries: z.countries?.map((c: any) => ({ code: c.code, name: c.name }))
-  })), null, 2));
-    // Process weight-based rates
-    for (const rate of weightBased) {
-      const price = parseFloat(String(rate.price ?? "0")) || 0;
-      rates.push({
-        handle: rate.id?.toString() ?? rate.name,
-        title: rate.name ?? "Standard Shipping",
-        estimatedDays: DELIVERY_ESTIMATES[rate.name] ?? null,
-        price: {
-          amount: price.toFixed(2),
-          currencyCode: "AED",
-        },
-      });
     }
 
-    // Sort: free first, then by price ascending
-    rates.sort((a, b) => {
-      const pa = parseFloat(a.price.amount);
-      const pb = parseFloat(b.price.amount);
-      return pa - pb;
-    });
+    // Sort: free (0) first, then cheapest
+    rates.sort((a, b) => parseFloat(a.price.amount) - parseFloat(b.price.amount));
 
     console.log(
       `[Shipping] Returning ${rates.length} rates:`,
-      rates.map((r) => `${r.title} = ${r.price.amount} ${r.price.currencyCode}`)
+      rates.map((r) => `${r.title} = ${r.price.amount} AED`)
     );
 
     return NextResponse.json({ rates });
