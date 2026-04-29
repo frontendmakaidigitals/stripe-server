@@ -128,7 +128,11 @@ export default function CheckoutClient({
 
   const codFee = method === "cod" && codAvailable ? COD_FEE_AED : 0;
 
-  const grandTotal = total + shippingCost - discountAmount + codFee;
+  const shippingCurrency = selectedRate?.price.currencyCode ?? "AED";
+  const shippingInDisplayCurrency =
+    shippingCurrency === currency ? shippingCost : 0;
+  const grandTotal =
+    total + shippingInDisplayCurrency - discountAmount + codFee;
   async function fetchShippingRates(addr: CustomerInfo) {
     if (!addr.address || !addr.city || !addr.country) return;
     setRatesLoading(true);
@@ -142,6 +146,10 @@ export default function CheckoutClient({
             city: addr.city,
             country: addr.country,
             phone: addr.phone,
+            // Pass subtotal so API can apply min/max order conditions.
+            // If currency isn't AED this will be approximate, but it's
+            // only used for the AED domestic zone anyway.
+            subtotalAED: total,
             lineItems: items.map((i) => ({
               variantId: i.variant_id,
               quantity: i.quantity,
@@ -152,7 +160,7 @@ export default function CheckoutClient({
       const data = await res.json();
       console.log("Shipping API response:", data);
       setShippingRates(data.rates ?? []);
-      setSelectedRate(data.rates?.[0] ?? null); // auto-select first
+      setSelectedRate(data.rates?.[0] ?? null);
     } finally {
       setRatesLoading(false);
     }
@@ -810,18 +818,24 @@ export default function CheckoutClient({
                 <span className="font-medium text-[#1a1a1a]">
                   {ratesLoading
                     ? "Calculating…"
-                    : fmt(
-                        shippingCost,
-                        selectedRate?.price.currencyCode ?? currency,
-                      )}
+                    : !selectedRate
+                      ? "—"
+                      : shippingCost === 0
+                        ? "FREE"
+                        : fmt(shippingCost, shippingCurrency)}
                 </span>
               </div>
               <div className="flex justify-between items-baseline border-t border-[#e0e0e0] pt-4 mt-1">
                 <span className="text-base font-semibold">Total</span>
                 <div className="text-right">
                   <span className="text-2xl font-bold">
-                    {fmt(grandTotal, currency).replace(/[A-Z]{3}\s?/, "")}
+                    {fmt(grandTotal, currency)}
                   </span>
+                  {shippingCurrency !== currency && shippingCost > 0 && (
+                    <p className="text-xs text-[#aaa] mt-0.5">
+                      excl. {fmt(shippingCost, shippingCurrency)} shipping
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
