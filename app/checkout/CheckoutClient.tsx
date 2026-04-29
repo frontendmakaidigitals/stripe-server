@@ -606,7 +606,7 @@ export default function CheckoutClient({
                         </div>
                       </label>
 
-                      {currency === "aed" && (
+                      {currency === "United Arab Emirates" && (
                         <label
                           className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${method === "cod" ? "bg-[#f5f5f5]" : "bg-white hover:bg-[#fafafa]"}`}
                         >
