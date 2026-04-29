@@ -112,7 +112,9 @@ export default function CheckoutClient({
     phone: prefill.phone || "",
     address: prefill.address || "",
     city: prefill.city || "",
-    country: prefill.country || "",
+    country: prefill.country
+      ? (countriesLib.getName(prefill.country, "en") ?? prefill.country)
+      : "",
     addresses: prefill.addresses ?? [],
   });
   const COD_COUNTRIES = ["AE"];
@@ -467,13 +469,13 @@ export default function CheckoutClient({
                             items={countries}
                             value={customer.country || null}
                             onValueChange={(value: any) => {
-                              const code =
-                                typeof value === "object" && value?.code
-                                  ? value.code
+                              const name =
+                                typeof value === "object" && value?.name
+                                  ? value.name
                                   : value;
                               setCustomer((c: any) => ({
                                 ...c,
-                                country: code,
+                                country: name ?? "",
                               }));
                             }}
                           >
