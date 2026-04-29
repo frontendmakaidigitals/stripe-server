@@ -442,7 +442,7 @@ export default function CheckoutClient({
                       <div className="flex items-center justify-between mb-4">
                         <h2 className="text-lg font-semibold">Contact</h2>
                         <a
-                          href={`${process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN}/account/login`}
+                          href={`https://${process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN}/account/login`}
                           className="text-sm text-[#1a6cff] hover:underline"
                         >
                           Sign in
