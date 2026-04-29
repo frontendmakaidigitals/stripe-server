@@ -18,8 +18,17 @@ type ShippingRate = {
   estimatedDays?: string | null;
   price: { amount: string; currencyCode: string };
 };
+const CURRENCY_LOCALE: Record<string, string> = {
+  USD: "en-US",
+  EUR: "de-DE", // 227,28 € style
+  CAD: "en-CA",
+  AED: "ar-AE",
+  SAR: "ar-SA",
+};
+
 function fmt(amount: number, currency: string) {
-  return new Intl.NumberFormat("en-US", {
+  const locale = CURRENCY_LOCALE[currency] ?? "en-US";
+  return new Intl.NumberFormat(locale, {
     style: "currency",
     currency,
     minimumFractionDigits: 2,
@@ -744,23 +753,13 @@ export default function CheckoutClient({
                   {fmt(total, currency)}
                 </span>
               </div>
-              {discountResult && (
-                <div
-                  className={`mb-4 text-sm px-3 py-2 rounded-md ${
-                    discountResult.valid
-                      ? "bg-green-50 border border-green-200 text-green-700"
-                      : "bg-red-50 border border-red-200 text-red-600"
-                  }`}
-                >
-                  {discountResult.valid
-                    ? `✓ ${(discountResult as any).automatic ? "Auto-applied: " : ""}"${discountResult.code}" — ${
-                        discountResult.type === "percentage"
-                          ? `${discountResult.amount}% off`
-                          : fmt(discountResult.amount, currency)
-                      }`
-                    : "Invalid or expired discount code"}
+              {discountResult?.valid && (
+                <div className="flex justify-between text-sm text-green-600">
+                  <span>Discount ({discountResult.code})</span>
+                  <span>− {fmt(discountAmount, currency)}</span>
                 </div>
               )}
+
               <div className="flex justify-between text-sm text-[#555]">
                 <span>Shipping</span>
                 <span className="font-medium text-[#1a1a1a]">
