@@ -7,11 +7,13 @@ import type {
   CustomerInfo,
   ShopifyAddress,
 } from "../lib/checkout-token";
+import countriesLib from "i18n-iso-countries";
+import en from "i18n-iso-countries/langs/en.json";
 import Image from "next/image";
 type PaymentMethod = "stripe" | "cod" | null;
 type Step = "contact" | "shipping" | "payment" | "cod-success";
-const COD_FEE_PERCENT = 10;
-const SHIPPING_RATE = 35; // AED – replace with dynamic value if needed
+
+countriesLib.registerLocale(en);
 type ShippingRate = {
   handle: string;
   title: string;
@@ -64,7 +66,12 @@ export default function CheckoutClient({
     code: string;
   } | null>(null);
   const [discountLoading, setDiscountLoading] = useState(false);
-
+  const countries = Object.entries(countriesLib.getNames("en")).map(
+    ([code, name]) => ({
+      code,
+      name,
+    }),
+  );
   // Add discount calculation
   const discountAmount = discountResult?.valid
     ? discountResult.type === "percentage"
@@ -187,7 +194,6 @@ export default function CheckoutClient({
     }
     return customer;
   }
- 
 
   async function startStripe() {
     setLoading(true);
@@ -249,17 +255,11 @@ export default function CheckoutClient({
     method === "stripe" ? startStripe() : placeCODOrder();
   }
 
-  const selectedAddr = savedAddresses.find(
-    (a: ShopifyAddress) => a.id === selectedAddressId,
-  );
-
   const shippingReady = hasAddresses
     ? Boolean(selectedAddressId) || useNewAddress
     : Boolean(
         customer.address && customer.city && customer.phone && customer.name,
       );
-
-  const newAddrReady = customer.address && customer.city && customer.phone;
 
   return (
     <div
@@ -436,24 +436,18 @@ export default function CheckoutClient({
                           <select
                             className="w-full border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm bg-white outline-none focus:border-[#1a1a1a] appearance-none transition-colors"
                             value={customer.country}
-                            onChange={(e) => {
-                              const countryMap: Record<string, string> = {
-                                "United Arab Emirates": "AE",
-                                "Saudi Arabia": "SA",
-                                India: "IN",
-                                Kuwait: "KW",
-                                Qatar: "QA",
-                              };
-                              const code =
-                                countryMap[e.target.value] ?? e.target.value;
-                              setCustomer((c) => ({ ...c, country: code }));
-                            }}
+                            onChange={(e) =>
+                              setCustomer((c) => ({
+                                ...c,
+                                country: e.target.value,
+                              }))
+                            }
                           >
-                            <option value="AE">United Arab Emirates</option>
-                            <option value="SA">Saudi Arabia</option>
-                            <option value="IN">India</option>
-                            <option value="KW">Kuwait</option>
-                            <option value="QA">Qatar</option>
+                            {countries.map((c) => (
+                              <option key={c.code} value={c.code}>
+                                {c.name}
+                              </option>
+                            ))}
                           </select>
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] pointer-events-none text-xs">
                             ▾
@@ -825,7 +819,6 @@ export default function CheckoutClient({
               <div className="flex justify-between items-baseline border-t border-[#e0e0e0] pt-4 mt-1">
                 <span className="text-base font-semibold">Total</span>
                 <div className="text-right">
-                  <span className="mr-1">{currency}</span>
                   <span className="text-2xl font-bold">
                     {fmt(grandTotal, currency).replace(/[A-Z]{3}\s?/, "")}
                   </span>
