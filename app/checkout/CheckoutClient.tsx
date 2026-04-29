@@ -10,7 +10,7 @@ import type {
 import Image from "next/image";
 type PaymentMethod = "stripe" | "cod" | null;
 type Step = "contact" | "shipping" | "payment" | "cod-success";
-
+const COD_FEE_PERCENT = 10;
 const SHIPPING_RATE = 35; // AED – replace with dynamic value if needed
 type ShippingRate = {
   handle: string;
@@ -105,7 +105,9 @@ export default function CheckoutClient({
     ? parseFloat(selectedRate.price.amount)
     : SHIPPING_RATE;
 
-  const grandTotal = total + shippingCost - discountAmount;
+  const codFee =
+    method === "cod" ? (total + shippingCost) * (COD_FEE_PERCENT / 100) : 0;
+  const grandTotal = total + shippingCost - discountAmount + codFee;
   async function fetchShippingRates(addr: CustomerInfo) {
     console.log("fetchShippingRates called with:", addr);
     if (!addr.address || !addr.city || !addr.country) return;
@@ -211,6 +213,7 @@ export default function CheckoutClient({
           customer: getOrderCustomer(),
           token: payload.token,
           shipping: shippingCost,
+          codFee,
           shippingHandle: selectedRate?.handle,
         }),
       });
@@ -603,21 +606,23 @@ export default function CheckoutClient({
                         </div>
                       </label>
 
-                      <label
-                        className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${method === "cod" ? "bg-[#f5f5f5]" : "bg-white hover:bg-[#fafafa]"}`}
-                      >
-                        <input
-                          type="radio"
-                          name="payment"
-                          value="cod"
-                          checked={method === "cod"}
-                          onChange={() => setMethod("cod")}
-                          className="w-4 h-4 accent-[#1a1a1a]"
-                        />
-                        <span className="text-sm font-medium flex-1">
-                          Cash on Delivery (COD)
-                        </span>
-                      </label>
+                      {currency === "aed" && (
+                        <label
+                          className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${method === "cod" ? "bg-[#f5f5f5]" : "bg-white hover:bg-[#fafafa]"}`}
+                        >
+                          <input
+                            type="radio"
+                            name="payment"
+                            value="cod"
+                            checked={method === "cod"}
+                            onChange={() => setMethod("cod")}
+                            className="w-4 h-4 accent-[#1a1a1a]"
+                          />
+                          <span className="text-sm font-medium flex-1">
+                            Cash on Delivery (COD)
+                          </span>
+                        </label>
+                      )}
                     </div>
 
                     {method === "cod" && (

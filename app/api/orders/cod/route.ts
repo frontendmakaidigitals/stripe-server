@@ -7,17 +7,19 @@ interface CODRequest {
   currency: string;
   customer: CustomerInfo;
   token?: string;
+  shipping?: number;
+  shippingHandle?: string;
+  codFee?: number;
 }
-
-// ─── Create Shopify order ─────────────────────────────────────────────────────
 
 async function createShopifyOrder(
   items: CartItem[],
   customer: CustomerInfo,
   currency: string,
+  codFee: number = 0,
 ) {
-  const domain = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN!;   // "yourstore.myshopify.com"
-  const token  = process.env.SHOPIFY_ACCESS_TOKEN!;    // shpat_xxx
+  const domain = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN!;
+  const token  = process.env.SHOPIFY_ACCESS_TOKEN!;
 
   const [firstName, ...rest] = customer.name.trim().split(" ");
   const lastName = rest.join(" ") || "-";
@@ -31,27 +33,36 @@ async function createShopifyOrder(
     phone:      customer.phone,
   };
 
-  // Build line items — use variant_id if present (links to real Shopify product)
-  const lineItems = items.map((item) =>
+  const lineItems: object[] = items.map((item) =>
     item.variant_id
       ? { variant_id: parseInt(item.variant_id, 10), quantity: item.quantity }
       : {
-          title:              item.product_title,
-          price:              (item.price / 100).toFixed(2),
-          quantity:           item.quantity,
-          requires_shipping:  true,
-          taxable:            false,
+          title:             item.product_title,
+          price:             item.price.toFixed(2),  // already decimal
+          quantity:          item.quantity,
+          requires_shipping: true,
+          taxable:           false,
         },
   );
 
-  // Step 1: Create draft order
+  // ✅ Add COD fee as a line item
+  if (codFee > 0) {
+    lineItems.push({
+      title:             "Cash on Delivery Fee (10%)",
+      price:             codFee.toFixed(2),
+      quantity:          1,
+      requires_shipping: false,
+      taxable:           false,
+    });
+  }
+
   const draftRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders.json`,
     {
       method:  "POST",
       headers: {
         "X-Shopify-Access-Token": token,
-        "Content-Type":          "application/json",
+        "Content-Type":           "application/json",
       },
       body: JSON.stringify({
         draft_order: {
@@ -59,10 +70,9 @@ async function createShopifyOrder(
           email:            customer.email,
           shipping_address: address,
           billing_address:  address,
-          note:             `COD order — phone: ${customer.phone}`,
+          note:             `COD order — phone: ${customer.phone}${codFee > 0 ? ` | COD fee: ${codFee.toFixed(2)} ${currency}` : ""}`,
           tags:             "COD, custom-checkout",
-          // Don't let Shopify auto-send its own checkout URL to customer
-          send_receipt: false,
+          send_receipt:     false,
         },
       }),
     },
@@ -76,21 +86,18 @@ async function createShopifyOrder(
 
   const { draft_order: draft } = await draftRes.json();
 
-  // Step 2: Complete draft → real order with payment_pending=true
-  // This deducts inventory and makes it visible in Shopify fulfillment
   const completeRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders/${draft.id}/complete.json?payment_pending=true`,
     {
       method:  "PUT",
       headers: {
         "X-Shopify-Access-Token": token,
-        "Content-Type":          "application/json",
+        "Content-Type":           "application/json",
       },
     },
   );
 
   if (!completeRes.ok) {
-    // Draft was created but not completed — log it, don't fail the customer
     console.warn("Draft order created but completion failed. Draft ID:", draft.id);
     return { orderId: draft.name, numericId: draft.id };
   }
@@ -101,19 +108,17 @@ async function createShopifyOrder(
     `✅ COD order created: ${completed.name}`,
     `customer=${customer.email}`,
     `total=${completed.total_price} ${currency}`,
+    codFee > 0 ? `codFee=${codFee.toFixed(2)}` : "",
   );
 
   return { orderId: completed.name, numericId: completed.id };
 }
 
-// ─── Handler ──────────────────────────────────────────────────────────────────
-
 export async function POST(request: NextRequest) {
   try {
     const body: CODRequest = await request.json();
-    const { items, currency = "AED", customer } = body;
+    const { items, currency = "AED", customer, codFee = 0 } = body;
 
-    // Validate
     if (!items?.length) {
       return NextResponse.json({ error: "No items in cart" }, { status: 400 });
     }
@@ -121,12 +126,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing customer details" }, { status: 400 });
     }
 
-    const result = await createShopifyOrder(items, customer, currency);
+    // ✅ Pass codFee to order creation
+    const result = await createShopifyOrder(items, customer, currency, codFee);
+
     const token = request.headers.get("x-checkout-token") || body.token;
-    if (token) markTokenUsed(token)
+    if (token) markTokenUsed(token);
+
     return NextResponse.json({
-      success:  true,
-      orderId:  result.orderId,    // e.g. "#1042" — shown to customer
+      success: true,
+      orderId: result.orderId,
     });
 
   } catch (err: unknown) {
