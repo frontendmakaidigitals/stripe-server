@@ -328,6 +328,7 @@ export default function CheckoutClient({
           discountCode: discountResult?.valid ? discountCode : undefined,
           discountAmount: discountResult?.valid ? discountAmount : 0, // ← add
           discountType: discountResult?.valid ? discountResult.type : null, // ← add
+          cancelUrl: window.location.href,
         }),
       });
       const data = await res.json();
@@ -378,10 +379,18 @@ export default function CheckoutClient({
     );
     return found ? found[0] : nameOrCode;
   }
+  const [buttonText, setButtonText] = useState<string | null>(null);
 
   function handlePayNow(e: React.FormEvent) {
     e.preventDefault();
     if (!method) return;
+
+    const label = method === "stripe" ? "Pay now" : "Place order";
+    setButtonText(label);
+
+    // Reset back to normal after 3 seconds
+    setTimeout(() => setButtonText(null), 5000);
+
     method === "stripe" ? startStripe() : placeCODOrder();
   }
 
@@ -975,7 +984,7 @@ export default function CheckoutClient({
                     }`}
                   >
                     {loading
-                      ? "Processing…"
+                      ? (buttonText ?? "Processing…")
                       : method === "stripe"
                         ? "Pay now"
                         : "Place order"}
