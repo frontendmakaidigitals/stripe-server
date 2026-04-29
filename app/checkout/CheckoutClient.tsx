@@ -1096,7 +1096,7 @@ export default function CheckoutClient({
               {method === "cod" && codFee > 0 && (
                 <div className="flex justify-between text-sm text-amber-600">
                   <span>COD fee</span>
-                  <span>+ {fmt(codFee, "AED")}</span>
+                  <span>+ {fmt(codFee, "currency")}</span>
                 </div>
               )}
 
