@@ -7,7 +7,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 });
 
 const CORS_HEADERS = {
-  "Access-Control-Allow-Origin":  "*",
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
@@ -26,7 +26,9 @@ export async function POST(request: NextRequest) {
       token,
       shipping,
       shippingHandle,
-      discountCode
+      discountCode,
+      discountAmount,  // ← new: the calculated amount in display currency
+      discountType,    // ← new: "percentage" | "fixed"
     }: {
       items: CartItem[];
       currency: string;
@@ -34,26 +36,32 @@ export async function POST(request: NextRequest) {
       token?: string;
       shipping?: number;
       shippingHandle?: string;
-       discountCode?: string; 
+      discountCode?: string;
+      discountAmount?: number;
+      discountType?: "percentage" | "fixed" | null;
     } = body;
 
     if (!items?.length) {
       return NextResponse.json({ error: "No items" }, { status: 400, headers: CORS_HEADERS });
     }
-     // ✅ If discount code provided, look it up in Stripe and apply it
-    let discounts: { promotion_code: string }[] | undefined;
-    if (discountCode) {
+
+    // Create a one-time Stripe coupon from the Shopify-validated discount
+    // No Stripe promo code lookup needed — we trust our own /api/discount/validate
+    let discounts: { coupon: string }[] | undefined;
+    if (discountCode && discountAmount && discountAmount > 0) {
       try {
-        const promoCodes = await stripe.promotionCodes.list({
-          code:   discountCode,
-          active: true,
-          limit:  1,
+        const coupon = await stripe.coupons.create({
+          name: discountCode.toUpperCase(),
+          ...(discountType === "percentage"
+            ? { percent_off: discountAmount }                                      // e.g. 20 = 20% off
+            : { amount_off: Math.round(discountAmount * 100), currency: currency.toLowerCase() }), // fixed in cents
+          duration: "once",
+          max_redemptions: 1,
         });
-        if (promoCodes.data.length > 0) {
-          discounts = [{ promotion_code: promoCodes.data[0].id }];
-        }
+        discounts = [{ coupon: coupon.id }];
       } catch (e) {
-        console.warn("Could not find promo code:", discountCode);
+        console.warn("[Stripe] Could not create coupon:", e);
+        // Don't block checkout — just proceed without discount
       }
     }
 
@@ -63,7 +71,7 @@ export async function POST(request: NextRequest) {
       price_data: {
         currency: currency.toLowerCase(),
         product_data: {
-          name:   item.product_title,
+          name: item.product_title,
           images: item.image ? [item.image] : [],
         },
         unit_amount: Math.round(item.price * 100),
@@ -76,9 +84,9 @@ export async function POST(request: NextRequest) {
         price_data: {
           currency: currency.toLowerCase(),
           product_data: {
-        name: "Shipping",
-        images: [],     
-      },
+            name: "Shipping",
+            images: [],
+          },
           unit_amount: Math.round(shipping * 100),
         },
         quantity: 1,
@@ -86,24 +94,24 @@ export async function POST(request: NextRequest) {
     }
 
     const session = await stripe.checkout.sessions.create({
-      mode:                  "payment",
-      payment_method_types:  ["card"],
-      customer_email:        customer?.email || undefined,
-      line_items:            lineItems,
-      allow_promotion_codes: false,
-      success_url:           `${baseUrl}/success`,
-      cancel_url:            `${baseUrl}/cancel`,
+      mode: "payment",
+      payment_method_types: ["card"],
+      customer_email: customer?.email || undefined,
+      line_items: lineItems,
+      // discounts[] and allow_promotion_codes are mutually exclusive in Stripe
+      ...(discounts
+        ? { discounts }
+        : { allow_promotion_codes: false }), // no discount = no promo box either
+      success_url: `${baseUrl}/success`,
+      cancel_url: `${baseUrl}/cancel`,
       metadata: {
-        token:          token                        || "",
-        customerName:   (customer?.name  || "").slice(0, 100),
-        customerEmail:  (customer?.email || "").slice(0, 100),
+        token: token || "",
+        customerName: (customer?.name || "").slice(0, 100),
+        customerEmail: (customer?.email || "").slice(0, 100),
         currency,
-        shippingHandle: shippingHandle               || "",
+        shippingHandle: shippingHandle || "",
+        discountCode: discountCode || "",
       },
-     ...(discounts
-    ? { discounts }
-    : { allow_promotion_codes: true }
-  ),
     });
 
     return NextResponse.json({ url: session.url }, { headers: CORS_HEADERS });
