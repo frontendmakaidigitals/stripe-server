@@ -132,9 +132,9 @@ export default function CheckoutClient({
     return typeof raw === "object" && raw?.code ? raw.code : raw;
   })();
   const codAvailable = isCODAvailable(currentCountry);
-  function isCODAvailable(country: string | { code: string } | null): boolean {
+  function isCODAvailable(country: string | null): boolean {
     if (!country) return false;
-    const code = typeof country === "object" ? country.code : country;
+    const code = toCountryCode(country);
     return COD_COUNTRIES.includes(code.toUpperCase());
   }
   const COD_FEE_AED = 10;
@@ -152,7 +152,8 @@ export default function CheckoutClient({
   const grandTotal =
     total + shippingInDisplayCurrency - discountAmount + codFee;
   async function fetchShippingRates(addr: CustomerInfo) {
-    if (!addr.city || !addr.country) return; // ← remove addr.address check
+    if (!addr.city || !addr.country) return;
+    const countryCode = toCountryCode(addr.country); // ← convert here
     setRatesLoading(true);
     try {
       const res = await fetch("/api/shipping/rates", {
@@ -162,11 +163,9 @@ export default function CheckoutClient({
           address: {
             address1: addr.address,
             city: addr.city,
-            country: addr.country,
+            country: countryCode, // ← send code, not name
             phone: addr.phone,
-            // Pass subtotal so API can apply min/max order conditions.
-            // If currency isn't AED this will be approximate, but it's
-            // only used for the AED domestic zone anyway.
+            currency: currency,
             subtotalAED: total,
             lineItems: items.map((i) => ({
               variantId: i.variant_id,
@@ -176,7 +175,6 @@ export default function CheckoutClient({
         }),
       });
       const data = await res.json();
-      console.log("Shipping API response:", data);
       setShippingRates(data.rates ?? []);
       setSelectedRate(data.rates?.[0] ?? null);
     } finally {
@@ -210,21 +208,24 @@ export default function CheckoutClient({
     customer.address,
   ]);
   function getOrderCustomer(): CustomerInfo {
+    const base = {
+      ...customer,
+      country: toCountryCode(customer.country || ""),
+    };
     if (hasAddresses && !useNewAddress) {
       const addr = savedAddresses.find(
         (a: ShopifyAddress) => a.id === selectedAddressId,
       );
-      if (addr) {
+      if (addr)
         return {
-          ...customer,
+          ...base,
           phone: addr.phone || customer.phone,
           address: [addr.address1, addr.address2].filter(Boolean).join(", "),
           city: addr.city,
           country: addr.country,
         };
-      }
     }
-    return customer;
+    return base;
   }
 
   async function startStripe() {
@@ -279,6 +280,15 @@ export default function CheckoutClient({
     } finally {
       setLoading(false);
     }
+  }
+  function toCountryCode(nameOrCode: string): string {
+    if (!nameOrCode) return "";
+    if (nameOrCode.length === 2) return nameOrCode.toUpperCase(); // already a code
+    // look up by name
+    const found = Object.entries(countriesLib.getNames("en")).find(
+      ([, n]) => n.toLowerCase() === nameOrCode.toLowerCase(),
+    );
+    return found ? found[0] : nameOrCode;
   }
 
   function handlePayNow(e: React.FormEvent) {
