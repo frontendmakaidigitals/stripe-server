@@ -235,6 +235,8 @@ export default function CheckoutClient({
 
   async function fetchShippingRates(addr: CustomerInfo) {
     if (!addr.city || !addr.country) return;
+    if (currency !== "AED" && aedToBase === 1) return; // ← wait for rate
+
     const countryCode = toCountryCode(addr.country); // ← convert here
     setRatesLoading(true);
     try {
@@ -248,7 +250,7 @@ export default function CheckoutClient({
             country: countryCode, // ← send code, not name
             phone: addr.phone,
             currency: currency,
-            subtotalAED: total,
+            subtotalAED: currency === "AED" ? total : total / aedToBase,
             lineItems: items.map((i) => ({
               variantId: i.variant_id,
               quantity: i.quantity,
@@ -288,6 +290,7 @@ export default function CheckoutClient({
     customer.city,
     customer.country,
     customer.address,
+    aedToBase,
   ]);
   function getOrderCustomer(): CustomerInfo {
     const base = {
