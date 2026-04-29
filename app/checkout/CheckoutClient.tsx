@@ -140,6 +140,8 @@ export default function CheckoutClient({
     ? parseFloat(selectedRate.price.amount) || 0
     : 0;
 
+  type CountryValue = string | { code: string; name: string };
+
   const codFee = method === "cod" && codAvailable ? COD_FEE_AED : 0;
 
   const shippingCurrency = selectedRate?.price.currencyCode ?? "AED";
@@ -464,10 +466,14 @@ export default function CheckoutClient({
                           <Combobox
                             items={countries}
                             value={customer.country}
-                            onValueChange={(value) => {
+                            onValueChange={(value: any) => {
+                              const code =
+                                typeof value === "object" && value?.code
+                                  ? value.code
+                                  : value;
                               setCustomer((c: any) => ({
                                 ...c,
-                                country: value,
+                                country: code,
                               }));
                             }}
                           >
@@ -482,7 +488,7 @@ export default function CheckoutClient({
                               <ComboboxList>
                                 {(item) => (
                                   <ComboboxItem
-                                    value={item}
+                                    value={item.name}
                                     key={item.code}
                                     className="rounded-md! py-3"
                                   >
