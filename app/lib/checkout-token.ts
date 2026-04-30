@@ -1,43 +1,5 @@
- 
 
-export interface CartItem {
-  product_title: string;
-  quantity: number;
-  price: number;      
-  image?: string;
-  variant_id?: string;
-  sku?: string;
-}
-export interface ShopifyAddress {
-  id: string;
-  name: string;
-  phone: string;
-  address1: string;
-  address2?: string;
-  city: string;
-  country: string;
-  is_default: boolean;
-}
-    
-export interface CustomerInfo {
-  id?: string;
-  name: string;
-  email: string;
-  phone: string;
-  address: string;
-  city: string;
-  country: string | null;
-  addresses: ShopifyAddress[];
-}
-
-export interface CheckoutPayload {
-  items: CartItem[];
-  currency: string;
-  total: number;       // in cents
-  customer: CustomerInfo;
-  shop: string;     
-  token?:string   // e.g. "yourstore.myshopify.com"
-}
+import { CheckoutPayload } from "@/types/checkout.types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

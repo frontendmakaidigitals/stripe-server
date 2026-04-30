@@ -1,17 +1,19 @@
 import { isTokenUsed } from "../lib/used-tokens";
 import {
   verifyCheckoutToken,
-  type CheckoutPayload,
 } from "../lib/checkout-token";
+import { CheckoutPayload } from "@/types/checkout.types";
 import CheckoutClient from "./CheckoutClient";
-
+import { dummyPayload } from "@/lib/dummy-checkout";
 interface PageProps {
   searchParams: Promise<{ token?: string }>;
 }
 
 export default async function CheckoutPage({ searchParams }: PageProps) {
   const { token } = await searchParams;
-
+  if (!token || token === "dev-token") {
+    return <CheckoutClient payload={dummyPayload} />;
+  }
   if (!token) {
     return <TokenError message="No checkout session found." />;
   }
