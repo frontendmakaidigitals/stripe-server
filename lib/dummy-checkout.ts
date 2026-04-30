@@ -1,6 +1,6 @@
 // lib/dummy-checkout.ts
 
-import { CheckoutPayload } from "@/app/lib/checkout-token";
+import { CheckoutPayload } from "@/types/checkout.types";
 
 export const dummyPayload: CheckoutPayload = {
   currency: "USD",
@@ -29,5 +29,6 @@ export const dummyPayload: CheckoutPayload = {
     city: "Dubai",
     country: "UAE",
     addresses: [],
+    countryCode: "AE",
   },
 };

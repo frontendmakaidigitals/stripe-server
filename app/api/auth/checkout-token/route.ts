@@ -1,7 +1,8 @@
 // app/api/auth/checkout-token/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
-import { signCheckoutToken, type CartItem, type CustomerInfo } from "@/app/lib/checkout-token";
+import { signCheckoutToken} from "@/app/lib/checkout-token";
+import type { CartItem, CustomerInfo } from "@/types/checkout.types";
 
 function corsHeaders() {
   return {
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
       city:      customer?.city      || "",
       country:   customer?.country   || "AE",
       addresses: customer?.addresses ?? [],
+      countryCode: customer?.countryCode || "AE",
     };
 
     const token = await signCheckoutToken({

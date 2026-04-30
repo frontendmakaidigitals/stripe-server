@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import type { CustomerInfo, CartItem } from "@/app/lib/checkout-token";
+import type { CartItem, CustomerInfo } from "@/types/checkout.types";
+
 import { verifyCheckoutToken } from "@/app/lib/checkout-token";
 import { markTokenUsed } from "@/app/lib/used-tokens";
 

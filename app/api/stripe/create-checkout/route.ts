@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import type { CartItem, CustomerInfo } from "@/app/lib/checkout-token";
+
+import type { CartItem, CustomerInfo } from "@/types/checkout.types";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2026-04-22.dahlia",

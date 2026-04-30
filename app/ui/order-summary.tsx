@@ -4,7 +4,8 @@
 import { useState } from "react";
 import { fmt } from "../lib/checkout-utils";
 import type { PaymentMethod, DiscountResult } from "@/types//checkout.types";
-import type { checkoutItem } from "../lib/checkout-token";
+import type { checkoutItem } from "@/types/checkout.types";
+
 
 type Props = {
   items: checkoutItem[];

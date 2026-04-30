@@ -1,6 +1,7 @@
 import { markTokenUsed } from "@/app/lib/used-tokens";
 import { NextRequest, NextResponse } from "next/server";
-import type { CartItem, CustomerInfo } from "@/app/lib/checkout-token";
+
+import type { CartItem, CustomerInfo } from "@/types/checkout.types";
 
 interface CODRequest {
   items: CartItem[];
