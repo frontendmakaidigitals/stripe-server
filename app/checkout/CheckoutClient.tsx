@@ -38,7 +38,9 @@ export default function CheckoutClient({
   const { items, currency, total, customer: prefill } = payload;
 
   const isLoggedIn = Boolean(prefill.email);
-  const savedAddresses = prefill.addresses ?? [];
+  const [savedAddresses, setSavedAddresses] = useState<ShopifyAddress[]>(
+    prefill.addresses ?? [],
+  );
   const hasAddresses = isLoggedIn && savedAddresses.length > 0;
   const defaultAddr =
     savedAddresses.find((a: ShopifyAddress) => a.is_default) ??
@@ -226,7 +228,8 @@ export default function CheckoutClient({
       phone: data.address.phone || "",
       is_default: false,
     };
-    savedAddresses.push(formatted);
+
+    setSavedAddresses((prev) => [...prev, formatted]); // ← fixes the mutation bug
     setSelectedId(formatted.id);
     fetchShippingRates({
       ...customer,
