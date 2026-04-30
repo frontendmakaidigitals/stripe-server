@@ -20,17 +20,18 @@ export async function POST(req: NextRequest) {
         "X-Shopify-Access-Token": adminToken,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        address: {
-          first_name: address.firstName,
-          last_name: address.lastName,
-          address1: address.address1,
-          city: address.city,
-          country_code: address.countryCode,
-          zip: address.zip || "",
-          phone: address.phone || "",
-        },
-      }),
+     body: JSON.stringify({
+      address: {
+        first_name: address.firstName,
+        last_name: address.lastName,
+        address1: address.address1,
+        city: address.city,
+        country_code: address.countryCode,
+        province_code: address.province || "",  // ← add this
+        zip: address.zip || "",
+        phone: address.phone || "",
+      },
+    }),
     }
   );
 
