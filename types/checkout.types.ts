@@ -26,6 +26,7 @@ export type NewAddrForm = {
   province?: string;    
   zip: string;
   phone: string;
+  provinceName?: string;
 };
 export type CustomerInfo = {
   id: string;              
@@ -37,7 +38,8 @@ export type CustomerInfo = {
   city: string;
   country: string;
   countryCode: string;       
-  province?: string;         
+   province?: string;      // code e.g. "DU"
+  provinceName?: string;  // name e.g. "Dubai"  ← add       
   zip?: string;              
   addresses: ShopifyAddress[];
 };

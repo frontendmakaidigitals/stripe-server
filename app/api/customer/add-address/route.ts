@@ -11,6 +11,7 @@ export async function POST(req: NextRequest) {
   const numericId = customerId?.toString().includes("/")
     ? customerId.split("/").pop()
     : customerId;
+console.log("province being sent:", address.province);
 
   const res = await fetch(
     `https://${domain}/admin/api/2024-01/customers/${numericId}/addresses.json`,
@@ -27,7 +28,8 @@ export async function POST(req: NextRequest) {
         address1: address.address1,
         city: address.city,
         country_code: address.countryCode,
-        province_code: address.province || "",  // ← add this
+         province: address.provinceName || address.province || "",
+        province_code: address.province || "",
         zip: address.zip || "",
         phone: address.phone || "",
       },

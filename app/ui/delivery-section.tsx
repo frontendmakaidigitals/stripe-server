@@ -343,13 +343,14 @@ export function DeliverySection({
                         provinces.find((p) => p.code === guestProvince)?.name ??
                         ""
                       }
-                      onValueChange={(value: any) => {
+                      onValueChange={(v: any) => {
                         const name =
-                          typeof value === "object" && value?.name
-                            ? value.name
-                            : value;
+                          typeof v === "object" && v?.name ? v.name : v;
                         const province = provinces.find((p) => p.name === name);
-                        setCustomer({ province: province?.code ?? name });
+                        setCustomer({
+                          province: province?.code ?? name,
+                          provinceName: province?.name ?? name, // ← store name too
+                        });
                       }}
                     >
                       <ComboboxInput

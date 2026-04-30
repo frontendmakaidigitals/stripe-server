@@ -209,7 +209,10 @@ export function AddressForm({
                 onValueChange={(v: any) => {
                   const name = typeof v === "object" && v?.name ? v.name : v;
                   const province = provinces.find((p) => p.name === name);
-                  set({ province: province?.code ?? name });
+                  set({
+                    province: province?.code ?? name,
+                    provinceName: province?.name ?? name, // ← store name too
+                  });
                 }}
               >
                 <ComboboxInput
