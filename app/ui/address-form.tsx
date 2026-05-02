@@ -61,10 +61,11 @@ const INPUT =
 type Props = {
   value: NewAddrForm;
   onChange: (addr: NewAddrForm) => void;
-  onSave: () => void;
-  onCancel: () => void;
+  onSave?: () => void;
+  onCancel?: () => void;
   saving: boolean;
   error: string;
+  errors?: Record<string, string>; // ← validation errors from parent
 };
 
 export function AddressForm({
@@ -74,6 +75,7 @@ export function AddressForm({
   onCancel,
   saving,
   error,
+  errors
 }: Props) {
   const [countryData, setCountryData] = useState<CountryData | null>(null);
   const [loadingCountry, setLoadingCountry] = useState(false);
@@ -151,7 +153,7 @@ export function AddressForm({
       {/* ── First / Last name ── */}
       <div className="flex gap-3">
         <input
-          className={INPUT}
+          className={`${INPUT} ${errors?.name ? "border-red-400! bg-red-50!" : ""}`}
           placeholder={labels?.firstName ?? "First name"}
           value={value.firstName}
           onChange={(e) => set({ firstName: e.target.value })}
@@ -166,7 +168,7 @@ export function AddressForm({
 
       {/* ── Address 1 ── */}
       <input
-        className={INPUT}
+        className={`${INPUT} ${errors?.address ? "border-red-400! bg-red-50!" : ""}`}
         placeholder={labels?.address1 ?? "Address"}
         value={value.address1}
         onChange={(e) => set({ address1: e.target.value })}
@@ -187,7 +189,7 @@ export function AddressForm({
         <div className="flex gap-3">
           {showCity && (
             <input
-              className={INPUT}
+              className={`${INPUT} ${errors?.city ? "border-red-400! bg-red-50!" : ""}`}
               placeholder={labels?.city ?? "City"}
               value={value.city}
               onChange={(e) => set({ city: e.target.value })}
@@ -243,7 +245,7 @@ export function AddressForm({
       {/* ── ZIP / Postal — hidden when not in template (e.g. UAE) ── */}
       {shows("zip") && (
         <input
-          className={INPUT}
+          className={`${INPUT} ${errors?.zip ? "border-red-400! bg-red-50!" : ""}`}
           placeholder={isOptional("zip") ? `${zipLabel} (optional)` : zipLabel}
           value={value.zip ?? ""}
           onChange={(e) => set({ zip: e.target.value })}
@@ -261,25 +263,25 @@ export function AddressForm({
         />
       )}
 
-      {error && <p className="text-sm text-red-500">{error}</p>}
-
-      <div className="flex gap-3 mt-1">
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={saving}
-          className="flex-1 bg-primary text-white rounded-[6px] py-2.5 text-sm font-semibold disabled:bg-gray-400"
-        >
-          {saving ? "Saving…" : "Save address"}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="flex-1 border border-gray-300 rounded-[6px] py-2.5 text-sm font-medium text-[#555]"
-        >
-          Cancel
-        </button>
-      </div>
+      {onSave && onCancel && (
+        <div className="flex gap-3 mt-1">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving}
+            className="flex-1 bg-primary text-white rounded-[6px] py-2.5 text-sm font-semibold disabled:bg-gray-400"
+          >
+            {saving ? "Saving…" : "Save address"}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 border border-gray-300 rounded-[6px] py-2.5 text-sm font-medium text-[#555]"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
     </div>
   );
 }

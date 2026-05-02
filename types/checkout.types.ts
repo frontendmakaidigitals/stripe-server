@@ -1,5 +1,5 @@
 // checkout.types.ts
-export type PaymentMethod = "stripe" | "cod" | null;
+export type PaymentMethod = "stripe" | "cod" | null | 'tabby' | 'tamara';
 export type Step = "contact" | "shipping" | "payment" | "cod-success";
 
 export type ShippingRate = {
@@ -79,5 +79,8 @@ export interface CheckoutPayload {
   total: number;       // in cents
   customer: CustomerInfo;
   shop: string;     
-  token?:string   // e.g. "yourstore.myshopify.com"
+  token?:string ;
+    shipping?: number;           // shipping cost in the store currency
+  discountAmount?: number;     // discount value (fixed amount, already calculated)
+  discountCode?: string; 
 }

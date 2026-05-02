@@ -10,7 +10,8 @@ type Props = {
   loading: boolean;
   currency: string;
   aedToBase: number;
-  onSelect: (rate: ShippingRate) => void;
+  onSelect?: (rate: ShippingRate) => void;
+  error?: string;
 };
 
 export function ShippingMethodSection({
@@ -20,6 +21,7 @@ export function ShippingMethodSection({
   currency,
   aedToBase,
   onSelect,
+  error
 }: Props) {
   return (
     <section className="mb-8 border-t border-b border-gray-300 py-4">
@@ -47,7 +49,7 @@ export function ShippingMethodSection({
                     type="radio"
                     name="shippingRate"
                     checked={isSelected}
-                    onChange={() => onSelect(rate)}
+                    onChange={() => onSelect?.(rate)}
                     className="w-4 h-4 accent-[#1a1a1a]"
                   />
                   <div className="flex flex-col text-sm">

@@ -16,6 +16,7 @@ import type {
   DiscountResult,
   NewAddrForm,
 } from "@/types/checkout.types";
+import { isTabbyAvailable } from "../lib/tabby.config";
 import {
   toCountryCode,
   isCODAvailable,
@@ -27,7 +28,7 @@ import { ShippingMethodSection } from "../ui/shipping-method";
 import { PaymentSection } from "../ui/payment-section";
 import { OrderSummary } from "../ui/order-summary";
 import { CODSuccess } from "../ui/cod-sucess";
-
+import { TABBY_SUPPORTED_CURRENCIES } from "../lib/tabby.config";
 countriesLib.registerLocale(en);
 
 export default function CheckoutClient({
@@ -299,10 +300,111 @@ export default function CheckoutClient({
       setLoading(false);
     }
   }
+  async function startTabby() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/tabby/create-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items,
+          currency, // pass the actual store currency
+          customer: getOrderCustomer(), // includes countryCode
+          token: payload.token,
+          cancelUrl: window.location.href,
+          shipping: shippingCost, // pass shipping so Tabby total is accurate
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Tabby checkout failed");
+      window.location.href = data.url;
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      setLoading(false);
+    }
+  }
+
+  async function startTamara() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/tamara/create-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items,
+          currency,
+          customer: getOrderCustomer(),
+          token: payload.token,
+          shipping: shippingCost,
+          cancelUrl: window.location.href,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Tamara checkout failed");
+      window.location.href = data.url;
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      setLoading(false);
+    }
+  }
+ const isTabbySupported = isTabbyAvailable(grandTotal, currency);
+
+
+  function validateForm(): Record<string, string> {
+    const errors: Record<string, string> = {};
+
+    // ── Contact ──────────────────────────────────────────────────
+    const firstName = customer.name.split(" ")[0];
+    if (!firstName.trim()) errors.name = "First name is required";
+
+    if (!customer.email.trim()) errors.email = "Email is required";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email))
+      errors.email = "Enter a valid email address";
+
+    // ── Delivery — skip if using a saved address ──────────────────
+    const usingSavedAddress =
+      hasAddresses && !useNewAddress && selectedAddressId;
+
+    if (!usingSavedAddress) {
+      if (!customer.countryCode) errors.country = "Country is required";
+
+      if (!customer.address?.trim()) errors.address = "Address is required";
+
+      if (!customer.city?.trim()) errors.city = "City is required";
+
+      if (!customer.phone?.trim()) errors.phone = "Phone number is required";
+
+      // Province (Emirate, State, Region) — required when country has zones
+      if ((customer as any).provinceRequired && !(customer as any).province)
+        errors.province = "This field is required";
+
+      // ZIP / Postal code — required when country uses it
+      if ((customer as any).zipRequired && !(customer as any).zip?.trim())
+        errors.zip = "Postal code is required";
+    }
+
+    // ── Shipping ──────────────────────────────────────────────────
+    if (!selectedRate) errors.shipping = "Please select a shipping method";
+
+    // ── Payment ───────────────────────────────────────────────────
+    if (!method) errors.payment = "Please select a payment method";
+
+    return errors;
+  }
+
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   function handlePayNow() {
-    if (!method) return;
-    method === "stripe" ? startStripe() : placeCODOrder();
+    const errors = validateForm();
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
+    if (method === "stripe") return startStripe();
+    if (method === "tabby") return startTabby();
+    if (method === "tamara") return startTamara();
+    placeCODOrder();
   }
 
   const shippingReady = hasAddresses
@@ -336,7 +438,15 @@ export default function CheckoutClient({
                   <ContactSection
                     customer={customer}
                     isLoggedIn={isLoggedIn}
-                    onChange={setCustomer}
+                    onChange={(c) => {
+                      setCustomer(c);
+                      setFieldErrors((prev) => ({
+                        ...prev,
+                        name: "",
+                        email: "",
+                      }));
+                    }}
+                    errors={fieldErrors} // ← add this
                   />
 
                   <DeliverySection
@@ -349,8 +459,21 @@ export default function CheckoutClient({
                     customer={customer}
                     onSelectAddress={setSelectedId}
                     onUseNewAddress={setUseNewAddress}
-                    onCustomerChange={setCustomer}
                     onSaveNewAddress={handleSaveNewAddress}
+                    errors={fieldErrors} // ← add this
+                    onCustomerChange={(c) => {
+                      setCustomer(c);
+                      setFieldErrors((prev) => ({
+                        ...prev,
+                        name: "",
+                        address: "",
+                        city: "",
+                        phone: "",
+                        province: "",
+                        zip: "",
+                        country: "", // ← add this
+                      }));
+                    }}
                   />
 
                   <ShippingMethodSection
@@ -359,13 +482,22 @@ export default function CheckoutClient({
                     loading={ratesLoading}
                     currency={currency}
                     aedToBase={aedToBase}
-                    onSelect={setSelectedRate}
+                    error={fieldErrors.shipping} // ← add this
+                    onSelect={(rate) => {
+                      setSelectedRate(rate);
+                      setFieldErrors((prev) => ({ ...prev, shipping: "" }));
+                    }}
                   />
 
                   <PaymentSection
                     method={method}
                     codAvailable={codAvailable}
-                    onChange={setMethod}
+                    error={fieldErrors.payment}
+                    isTabbyAvailable={isTabbySupported}
+                    onChange={(m) => {
+                      setMethod(m);
+                      setFieldErrors((prev) => ({ ...prev, payment: "" }));
+                    }}
                   />
 
                   {error && (

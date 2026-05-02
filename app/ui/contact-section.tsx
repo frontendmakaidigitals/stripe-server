@@ -7,6 +7,7 @@ type Props = {
   customer: CustomerInfo;
   isLoggedIn: boolean;
   onChange: (c: CustomerInfo) => void;
+  errors?: Record<string, string>;
 };
 
 export function ContactSection({ customer, isLoggedIn, onChange }: Props) {
