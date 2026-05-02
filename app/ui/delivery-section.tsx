@@ -34,7 +34,7 @@ export function DeliverySection({
   onCustomerChange,
   onSaveNewAddress,
   onRequiredChange,
-  onUseNewAddress
+  onUseNewAddress,
 }: Props) {
   const { getValues, watch } = useFormContext();
   const [showAddressForm, setShowAddressForm] = useState(
@@ -55,24 +55,24 @@ export function DeliverySection({
 
   // Sync to customer whenever RHF values change (for shipping rates)
   useEffect(() => {
-    if (!showAddressForm) return;
-    onCustomerChange({
-      ...customer,
-      name: `${firstName} ${lastName}`.trim(),
-      address: address1,
-      city,
-      phone,
-      countryCode,
-      country: countryCode,
-    } as CustomerInfo);
-  }, [
-    firstName,
-    lastName,
-    address1,
+  if (!showAddressForm) return;
+  onCustomerChange({
+    ...customer,
+    name: `${firstName} ${lastName}`.trim(),
+    address: address1,
     city,
-    phone,
     countryCode,
-    showAddressForm,
+    country: countryCode,
+    // ← phone intentionally excluded here
+  } as CustomerInfo);
+}, [
+  firstName,
+  lastName,
+  address1,
+  city,
+  countryCode,
+  showAddressForm,
+  // ← phone removed from deps
   ]);
   async function handleSave() {
     const data = getValues();
@@ -148,8 +148,8 @@ export function DeliverySection({
           <button
             type="button"
             onClick={() => {
-              setShowAddressForm(false);
-              onUseNewAddress(false); // ← notify parent
+              setShowAddressForm(true); // ← was false, should be true
+              onUseNewAddress(true); // ← was false, should be true
               setSaveError("");
             }}
             className="text-sm text-[#1a6cff] hover:underline flex items-center gap-1"

@@ -184,8 +184,10 @@ export default function CheckoutClient({
 
   // ── Helpers ────────────────────────────────────────────────────
   function getOrderCustomer(): CustomerInfo {
+    const formValues = methods.getValues(); // ← read from form at submit time
     const base = {
       ...customer,
+      phone: formValues.phone || customer.phone, // ← get phone from form
       country: toCountryCode(customer.country || ""),
     };
     if (hasAddresses && !useNewAddress) {
@@ -195,7 +197,7 @@ export default function CheckoutClient({
       if (addr)
         return {
           ...base,
-          phone: addr.phone || customer.phone,
+          phone: addr.phone || formValues.phone || customer.phone,
           address: [addr.address1, addr.address2].filter(Boolean).join(", "),
           city: addr.city,
           country: addr.country,
