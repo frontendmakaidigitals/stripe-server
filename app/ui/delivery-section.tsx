@@ -1,6 +1,6 @@
-// components/DeliverySection.tsx
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useFormContext } from "react-hook-form";
 import type { CustomerInfo, ShopifyAddress } from "@/types/checkout.types";
 import type { NewAddrForm } from "@/types/checkout.types";
 import { AddressForm } from "./address-form";
@@ -11,23 +11,14 @@ type Props = {
   savedAddresses: ShopifyAddress[];
   defaultAddr: ShopifyAddress | undefined;
   selectedAddressId: string;
-  useNewAddress: boolean;
   customer: CustomerInfo;
   onSelectAddress: (id: string) => void;
-  onUseNewAddress: (v: boolean) => void;
   onCustomerChange: (c: CustomerInfo) => void;
   onSaveNewAddress: (addr: NewAddrForm) => Promise<void>;
-  errors?: Record<string, string>;
-};
-
-const EMPTY_ADDR: NewAddrForm = {
-  firstName: "",
-  lastName: "",
-  address1: "",
-  city: "",
-  countryCode: "AE",
-  zip: "",
-  phone: "",
+  onRequiredChange?: (flags: {
+    provinceRequired: boolean;
+    zipRequired: boolean;
+  }) => void;
 };
 
 export function DeliverySection({
@@ -36,64 +27,75 @@ export function DeliverySection({
   savedAddresses,
   defaultAddr,
   selectedAddressId,
-  useNewAddress,
   customer,
   onSelectAddress,
-  onUseNewAddress,
   onCustomerChange,
   onSaveNewAddress,
-  errors = {},
+  onRequiredChange,
 }: Props) {
+  const { getValues, watch } = useFormContext();
   const [showAddressForm, setShowAddressForm] = useState(
     !isLoggedIn || !hasAddresses,
   );
-  const [newAddr, setNewAddr] = useState<NewAddrForm>(() => ({
-    ...EMPTY_ADDR,
-    firstName: customer.name.split(" ")[0] || "",
-    lastName: customer.name.split(" ").slice(1).join(" ") || "",
-    address1: customer.address || "",
-    city: customer.city || "",
-    phone: customer.phone || "",
-    countryCode: customer.countryCode || "AE",
-  }));
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [saveError, setSaveError] = useState("");
 
   const showSavedAddresses = isLoggedIn && hasAddresses && !showAddressForm;
 
-  // When AddressForm changes, also sync CustomerInfo so shipping
-  // rates and validation stay in sync
-  function handleAddrChange(addr: NewAddrForm) {
-    setNewAddr(addr);
+  // Keep customer in sync with RHF values for shipping rate fetching
+  const countryCode = watch("countryCode");
+  const city = watch("city");
+  const address1 = watch("address1");
+  const phone = watch("phone");
+  const firstName = watch("firstName");
+  const lastName = watch("lastName");
+
+  // Sync to customer whenever RHF values change (for shipping rates)
+  useEffect(() => {
+    if (!showAddressForm) return;
     onCustomerChange({
       ...customer,
-      name: `${addr.firstName} ${addr.lastName}`.trim(),
-      address: addr.address1,
-      city: addr.city,
-      phone: addr.phone,
-      countryCode: addr.countryCode,
-      country: addr.countryCode,
-      // preserve required flags set by the countryData useEffect
-      provinceRequired: (customer as any).provinceRequired,
-      zipRequired: (customer as any).zipRequired,
-      province: addr.province ?? (customer as any).province,
-      zip: addr.zip ?? (customer as any).zip,
+      name: `${firstName} ${lastName}`.trim(),
+      address: address1,
+      city,
+      phone,
+      countryCode,
+      country: countryCode,
     } as CustomerInfo);
-  }
-
+  }, [
+    firstName,
+    lastName,
+    address1,
+    city,
+    phone,
+    countryCode,
+    showAddressForm,
+  ]);
   async function handleSave() {
-    if (!newAddr.firstName || !newAddr.address1 || !newAddr.city) {
-      setError("Please fill in first name, address, and city.");
+    const data = getValues();
+    if (!data.firstName || !data.address1 || !data.city) {
+      setSaveError("Please fill in first name, address, and city.");
       return;
     }
     setSaving(true);
-    setError("");
+    setSaveError("");
     try {
-      await onSaveNewAddress(newAddr);
+      await onSaveNewAddress({
+        firstName: data.firstName,
+        lastName: data.lastName,
+        address1: data.address1,
+        address2: data.address2,
+        city: data.city,
+        countryCode: data.countryCode,
+        province: data.province,
+        zip: data.zip,
+        phone: data.phone,
+      });
       setShowAddressForm(false);
-      setNewAddr(EMPTY_ADDR);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Could not save address");
+      setSaveError(
+        err instanceof Error ? err.message : "Could not save address",
+      );
     } finally {
       setSaving(false);
     }
@@ -103,7 +105,7 @@ export function DeliverySection({
     <section className="mb-8">
       <h2 className="text-sm text-gray-600 mb-4">Ship to</h2>
 
-      {/* ── Saved address list (logged-in only) ── */}
+      {/* ── Saved address list ── */}
       {showSavedAddresses && (
         <>
           <div className="rounded-lg overflow-hidden divide-y divide-sky-100 mb-3">
@@ -140,7 +142,6 @@ export function DeliverySection({
               </label>
             ))}
           </div>
-
           <button
             type="button"
             onClick={() => setShowAddressForm(true)}
@@ -151,16 +152,15 @@ export function DeliverySection({
         </>
       )}
 
-      {/* ── Address form — guests always, logged-in when adding new ── */}
+      {/* ── Address form ── */}
       {showAddressForm && (
         <>
-          {/* Back button for logged-in users who clicked "Add new address" */}
           {isLoggedIn && hasAddresses && (
             <button
               type="button"
               onClick={() => {
                 setShowAddressForm(false);
-                setError("");
+                setSaveError("");
               }}
               className="text-sm text-[#1a6cff] hover:underline mb-3 flex items-center gap-1"
             >
@@ -169,20 +169,18 @@ export function DeliverySection({
           )}
 
           <AddressForm
-            value={newAddr}
-            onChange={handleAddrChange}
             onSave={isLoggedIn && hasAddresses ? handleSave : undefined}
             onCancel={
               isLoggedIn && hasAddresses
                 ? () => {
                     setShowAddressForm(false);
-                    setError("");
+                    setSaveError("");
                   }
                 : undefined
             }
             saving={saving}
-            error={error}
-            errors={errors}
+            saveError={saveError}
+            onRequiredChange={onRequiredChange}
           />
         </>
       )}

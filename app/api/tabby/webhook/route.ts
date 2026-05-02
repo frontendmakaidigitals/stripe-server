@@ -87,17 +87,17 @@ async function createShopifyOrder(
     }),
   };
 
-  const draftRes = await fetch(
-    `https://${domain}/admin/api/2024-01/draft_orders.json`,
-    {
-      method:  "POST",
-      headers: {
-        "X-Shopify-Access-Token": token,
-        "Content-Type":           "application/json",
+    const draftRes = await fetch(
+      `https://${domain}/admin/api/2024-01/draft_orders.json`,
+      {
+        method:  "POST",
+        headers: {
+          "X-Shopify-Access-Token": token,
+          "Content-Type":           "application/json",
+        },
+        body: JSON.stringify({ draft_order: draftBody }),
       },
-      body: JSON.stringify({ draft_order: draftBody }),
-    },
-  );
+    );
 
   if (!draftRes.ok) {
     throw new Error(`Shopify draft order error: ${await draftRes.text()}`);

@@ -8,41 +8,23 @@ export interface TabbyRegion {
 }
 
 export const TABBY_REGIONS: Record<string, TabbyRegion> = {
-  AE: {
+    AE: {
     currency: "AED",
-    merchantCodeEnv: "main_website_store_AE",
+    merchantCodeEnv: "TABBY_MERCHANT_KEY_AED",   
     minAmount: 1,
     maxAmount: 20000,
   },
   SA: {
     currency: "SAR",
-    merchantCodeEnv: "main_website_store_SA",
+    merchantCodeEnv: "TABBY_MERCHANT_KEY_SAR",  
     minAmount: 1,
-    maxAmount: 5000,
+    maxAmount: 20000,
   },
   KW: {
     currency: "KWD",
-    merchantCodeEnv: "main_website_store_KW",
+    merchantCodeEnv: "TABBY_MERCHANT_KEY_KWD",   
     minAmount: 1,
-    maxAmount: 1500,
-  },
-  OM: {
-    currency: "OMR",
-    merchantCodeEnv: "main_website_store_OM",
-    minAmount: 1,
-    maxAmount: 2000,
-  },
-  QA: {
-    currency: "QAR",
-    merchantCodeEnv: "main_website_store_QA",
-    minAmount: 1,
-    maxAmount: 5000,
-  },
-  BH: {
-    currency: "BHD",
-    merchantCodeEnv: "main_website_store_BH",
-    minAmount: 1,
-    maxAmount: 2000,
+    maxAmount: 20000,
   },
 };
 
@@ -81,8 +63,7 @@ export function getTabbyRegion(
 export function getMerchantCode(region: TabbyRegion): string {
   return (
     process.env[region.merchantCodeEnv] ||
-    process.env.TABBY_MERCHANT_KEY ||       // generic fallback
-    ""
+    process.env.TABBY_MERCHANT_KEY || ""
   );
 }
 

@@ -1,9 +1,13 @@
 "use client";
 // app/checkout/CheckoutClient.tsx
+
 import Header from "../ui/header";
 import { useState, useEffect } from "react";
 import countriesLib from "i18n-iso-countries";
 import en from "i18n-iso-countries/langs/en.json";
+import { useForm, FormProvider, Form } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { checkoutSchemaWithFlags } from "../lib/checkout-schema";
 import type {
   CheckoutPayload,
   CustomerInfo,
@@ -349,63 +353,63 @@ export default function CheckoutClient({
       setLoading(false);
     }
   }
- const isTabbySupported = isTabbyAvailable(grandTotal, currency);
 
+  const isTabbySupported = isTabbyAvailable(grandTotal, currency);
 
-  function validateForm(): Record<string, string> {
-    const errors: Record<string, string> = {};
+  const [provinceRequired, setProvinceRequired] = useState(false);
+  const [zipRequired, setZipRequired] = useState(false);
 
-    // ── Contact ──────────────────────────────────────────────────
-    const firstName = customer.name.split(" ")[0];
-    if (!firstName.trim()) errors.name = "First name is required";
+  const methods = useForm({
+    resolver: zodResolver(
+      checkoutSchemaWithFlags(provinceRequired, zipRequired),
+    ),
+    defaultValues: {
+      firstName: prefill.name?.split(" ")[0] || "",
+      lastName: prefill.name?.split(" ").slice(1).join(" ") || "",
+      email: prefill.email || "",
+      phone: prefill.phone || "",
+      address1: prefill.address || "",
+      address2: "",
+      city: prefill.city || "",
+      countryCode: "AE",
+      province: "",
+      zip: "",
+    },
+    mode: "onSubmit", // only validate on submit
+    reValidateMode: "onChange", // re-validate a field once it's been fixed
+  });
 
-    if (!customer.email.trim()) errors.email = "Email is required";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email))
-      errors.email = "Enter a valid email address";
-
-    // ── Delivery — skip if using a saved address ──────────────────
-    const usingSavedAddress =
-      hasAddresses && !useNewAddress && selectedAddressId;
-
-    if (!usingSavedAddress) {
-      if (!customer.countryCode) errors.country = "Country is required";
-
-      if (!customer.address?.trim()) errors.address = "Address is required";
-
-      if (!customer.city?.trim()) errors.city = "City is required";
-
-      if (!customer.phone?.trim()) errors.phone = "Phone number is required";
-
-      // Province (Emirate, State, Region) — required when country has zones
-      if ((customer as any).provinceRequired && !(customer as any).province)
-        errors.province = "This field is required";
-
-      // ZIP / Postal code — required when country uses it
-      if ((customer as any).zipRequired && !(customer as any).zip?.trim())
-        errors.zip = "Postal code is required";
-    }
-
-    // ── Shipping ──────────────────────────────────────────────────
-    if (!selectedRate) errors.shipping = "Please select a shipping method";
-
-    // ── Payment ───────────────────────────────────────────────────
-    if (!method) errors.payment = "Please select a payment method";
-
-    return errors;
-  }
-
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [shippingError, setShippingError] = useState("");
+  const [paymentError, setPaymentError] = useState("");
 
   function handlePayNow() {
-    const errors = validateForm();
-    setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) return;
+    if (!selectedRate) setShippingError("Please select a shipping method");
+    if (!method) setPaymentError("Please select a payment method");
 
-    if (method === "stripe") return startStripe();
-    if (method === "tabby") return startTabby();
-    if (method === "tamara") return startTamara();
-    placeCODOrder();
+    methods.handleSubmit((data) => {
+      // Only reaches here if RHF validation passes
+      if (!selectedRate || !method) return; // still guard here
+
+      setCustomer((prev) => ({
+        ...prev,
+        name: `${data.firstName} ${data.lastName}`.trim(),
+        email: data.email,
+        phone: data.phone,
+        address: data.address1,
+        city: data.city,
+        countryCode: data.countryCode,
+        country: data.countryCode,
+      }));
+
+      if (method === "stripe") return startStripe();
+      if (method === "tabby") return startTabby();
+      if (method === "tamara") return startTamara();
+      placeCODOrder();
+    })();
   }
+  useEffect(() => {
+    methods.clearErrors();  
+  }, [provinceRequired, zipRequired]);
 
   const shippingReady = hasAddresses
     ? Boolean(selectedAddressId) || useNewAddress
@@ -415,148 +419,131 @@ export default function CheckoutClient({
 
   // ── Render ─────────────────────────────────────────────────────
   return (
-    <div
-      style={{ fontFamily: "'Söhne', 'Helvetica Neue', Arial, sans-serif" }}
-      className="min-h-screen bg-white text-[#1a1a1a]"
-    >
-      <div className="flex w-full justify-center py-4 border-b border-gray-200">
-        <Header />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <div className="min-h-[calc(100vh-65px)]">
-          <main className="w-full flex container py-10 justify-end">
-            <div className="w-full max-w-lg">
-              {step === "cod-success" ? (
-                <CODSuccess
-                  orderId={orderId}
-                  phone={getOrderCustomer().phone}
-                  email={customer.email}
-                />
-              ) : (
-                <>
-                  <ContactSection
-                    customer={customer}
-                    isLoggedIn={isLoggedIn}
-                    onChange={(c) => {
-                      setCustomer(c);
-                      setFieldErrors((prev) => ({
-                        ...prev,
-                        name: "",
-                        email: "",
-                      }));
-                    }}
-                    errors={fieldErrors} // ← add this
-                  />
-
-                  <DeliverySection
-                    isLoggedIn={isLoggedIn}
-                    hasAddresses={hasAddresses}
-                    savedAddresses={savedAddresses}
-                    defaultAddr={defaultAddr}
-                    selectedAddressId={selectedAddressId}
-                    useNewAddress={useNewAddress}
-                    customer={customer}
-                    onSelectAddress={setSelectedId}
-                    onUseNewAddress={setUseNewAddress}
-                    onSaveNewAddress={handleSaveNewAddress}
-                    errors={fieldErrors} // ← add this
-                    onCustomerChange={(c) => {
-                      setCustomer(c);
-                      setFieldErrors((prev) => ({
-                        ...prev,
-                        name: "",
-                        address: "",
-                        city: "",
-                        phone: "",
-                        province: "",
-                        zip: "",
-                        country: "", // ← add this
-                      }));
-                    }}
-                  />
-
-                  <ShippingMethodSection
-                    rates={shippingRates}
-                    selectedRate={selectedRate}
-                    loading={ratesLoading}
-                    currency={currency}
-                    aedToBase={aedToBase}
-                    error={fieldErrors.shipping} // ← add this
-                    onSelect={(rate) => {
-                      setSelectedRate(rate);
-                      setFieldErrors((prev) => ({ ...prev, shipping: "" }));
-                    }}
-                  />
-
-                  <PaymentSection
-                    method={method}
-                    codAvailable={codAvailable}
-                    error={fieldErrors.payment}
-                    isTabbyAvailable={isTabbySupported}
-                    onChange={(m) => {
-                      setMethod(m);
-                      setFieldErrors((prev) => ({ ...prev, payment: "" }));
-                    }}
-                  />
-
-                  {error && (
-                    <div className="mb-4 rounded-[6px] border border-[#fecaca] bg-[#fef2f2] px-4 py-3 text-sm text-[#dc2626]">
-                      {error}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={handlePayNow}
-                    disabled={
-                      !method ||
-                      loading ||
-                      (!shippingReady && !(hasAddresses && !useNewAddress))
-                    }
-                    className={`w-full rounded-[6px] py-4 text-base font-semibold text-white transition-all ${
-                      !method || loading
-                        ? "bg-[#aaa] cursor-not-allowed"
-                        : "bg-primary hover:bg-primary/90 active:scale-[0.99]"
-                    }`}
-                  >
-                    {loading
-                      ? "Processing…"
-                      : method === "stripe"
-                        ? "Pay now"
-                        : "Place order"}
-                  </button>
-
-                  <div className="mt-6 flex justify-center gap-6 text-xs text-[#aaa]">
-                    <a href="#" className="hover:text-[#555]">
-                      Privacy policy
-                    </a>
-                    <a href="#" className="hover:text-[#555]">
-                      Terms of service
-                    </a>
-                  </div>
-                </>
-              )}
-            </div>
-          </main>
+    <FormProvider {...methods}>
+      <div
+        style={{ fontFamily: "'Söhne', 'Helvetica Neue', Arial, sans-serif" }}
+        className="min-h-screen bg-white text-[#1a1a1a]"
+      >
+        <div className="flex w-full justify-center py-4 border-b border-gray-200">
+          <Header />
         </div>
 
-        <OrderSummary
-          items={items}
-          currency={currency}
-          total={total}
-          shippingCost={shippingCost}
-          codFee={codFee}
-          grandTotal={grandTotal}
-          method={method}
-          codAvailable={codAvailable}
-          ratesLoading={ratesLoading}
-          selectedRate={selectedRate}
-          discountResult={discountResult}
-          discountAmount={discountAmount}
-          onApplyDiscount={handleApplyDiscount}
-        />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="min-h-[calc(100vh-65px)]">
+            <main className="w-full flex container py-10 justify-end">
+              <div className="w-full max-w-lg">
+                {step === "cod-success" ? (
+                  <CODSuccess
+                    orderId={orderId}
+                    phone={getOrderCustomer().phone}
+                    email={customer.email}
+                  />
+                ) : (
+                  <>
+                    <ContactSection
+                      customer={customer}
+                      isLoggedIn={isLoggedIn}
+                      onChange={setCustomer}
+                    />
+
+                    <DeliverySection
+                      isLoggedIn={isLoggedIn}
+                      hasAddresses={hasAddresses}
+                      savedAddresses={savedAddresses}
+                      defaultAddr={defaultAddr}
+                      selectedAddressId={selectedAddressId}
+                      customer={customer}
+                      onSelectAddress={setSelectedId}
+                      onSaveNewAddress={handleSaveNewAddress}
+                      onRequiredChange={(flags) => {
+                        setProvinceRequired(flags.provinceRequired);
+                        setZipRequired(flags.zipRequired);
+                      }}
+                      onCustomerChange={setCustomer}
+                    />
+
+                    <ShippingMethodSection
+                      rates={shippingRates}
+                      selectedRate={selectedRate}
+                      loading={ratesLoading}
+                      currency={currency}
+                      aedToBase={aedToBase}
+                      error={shippingError} // ← was fieldErrors.shipping
+                      onSelect={(rate) => {
+                        setSelectedRate(rate);
+                        setShippingError(""); // ← was setFieldErrors(...)
+                      }}
+                    />
+
+                    <PaymentSection
+                      method={method}
+                      codAvailable={codAvailable}
+                      error={paymentError} // ← was fieldErrors.payment
+                      isTabbyAvailable={isTabbySupported}
+                      onChange={(m) => {
+                        setMethod(m);
+                        setPaymentError(""); // ← was setFieldErrors(...)
+                      }}
+                    />
+
+                    {error && (
+                      <div className="mb-4 rounded-[6px] border border-[#fecaca] bg-[#fef2f2] px-4 py-3 text-sm text-[#dc2626]">
+                        {error}
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handlePayNow}
+                      disabled={
+                        !method ||
+                        loading ||
+                        (!shippingReady && !(hasAddresses && !useNewAddress))
+                      }
+                      className={`w-full rounded-[6px] py-4 text-base font-semibold text-white transition-all ${
+                        !method || loading
+                          ? "bg-[#aaa] cursor-not-allowed"
+                          : "bg-primary hover:bg-primary/90 active:scale-[0.99]"
+                      }`}
+                    >
+                      {loading
+                        ? "Processing…"
+                        : method === "stripe"
+                          ? "Pay now"
+                          : "Place order"}
+                    </button>
+
+                    <div className="mt-6 flex justify-center gap-6 text-xs text-[#aaa]">
+                      <a href="#" className="hover:text-[#555]">
+                        Privacy policy
+                      </a>
+                      <a href="#" className="hover:text-[#555]">
+                        Terms of service
+                      </a>
+                    </div>
+                  </>
+                )}
+              </div>
+            </main>
+          </div>
+
+          <OrderSummary
+            items={items}
+            currency={currency}
+            total={total}
+            shippingCost={shippingCost}
+            codFee={codFee}
+            grandTotal={grandTotal}
+            method={method}
+            codAvailable={codAvailable}
+            ratesLoading={ratesLoading}
+            selectedRate={selectedRate}
+            discountResult={discountResult}
+            discountAmount={discountAmount}
+            onApplyDiscount={handleApplyDiscount}
+          />
+        </div>
       </div>
-    </div>
+    </FormProvider>
   );
 }

@@ -61,13 +61,7 @@ export async function POST(request: NextRequest) {
     }
 
     const merchantCode = getMerchantCode(region);
-    console.log("[Tabby Debug]", {
-        regionEnvKey: region.merchantCodeEnv,
-        fromRegionEnv: process.env[region.merchantCodeEnv],
-        fromMerchantCode: process.env.TABBY_MERCHANT_CODE,
-        fromMerchantKey: process.env.TABBY_MERCHANT_KEY,
-        final: merchantCode,
-      });
+    
     if (!merchantCode) {
       console.error(`[Tabby] Missing merchant code for region: ${countryCode}`);
       return NextResponse.json(
@@ -102,7 +96,7 @@ export async function POST(request: NextRequest) {
           email: customer.email || "",
           phone: customer.phone || "",
           name: customer.name || "Guest",
-          dob: "1990-01-01",            // required by Tabby; collect from user if possible
+          dob: "1990-01-01",           
         },
         shipping_address: {
           city: customer.city || "",
@@ -141,12 +135,16 @@ export async function POST(request: NextRequest) {
         region: countryCode,
       },
     };
+    const apiKey =
+      region.currency === "AED" || region.currency === "SAR" // KSA uses AED key based on your screenshot
+        ? process.env.TABBY_PUBLIC_API_KEY_AED
+        : process.env.TABBY_PUBLIC_API_KEY_KWD;
 
     // ── Call Tabby API ────────────────────────────────────────────
     const res = await fetch("https://api.tabby.ai/api/v2/checkout", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.TABBY_PUBLIC_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
