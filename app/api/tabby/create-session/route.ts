@@ -181,11 +181,18 @@ export async function POST(request: NextRequest) {
       );
     }
     await redis.set(
-      `tabby_checkout:${referenceId}`,
-      JSON.stringify({ items, customer, currency: region.currency, shipping,
-        discountAmount: 0, discountCode: undefined, token: token || "" }),
-      { ex: 60 * 60 * 24 }, // 24 hour expiry
-    );
+    `tabby_checkout:${referenceId}`,
+    JSON.stringify({
+      items,
+      customer,
+      currency: region.currency,
+      shipping,
+      discountAmount: 0,
+      discountCode: undefined,
+      token: token || "",
+    }),
+    { ex: 60 * 60 * 24 }, // 24 hours
+  );
 
     return NextResponse.json(
       { url: product.web_url, referenceId },
