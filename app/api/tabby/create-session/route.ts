@@ -5,13 +5,17 @@ import {
   getMerchantCode,
   isTabbyAvailable,
 } from "@/app/lib/tabby.config";
+import { Redis } from "@upstash/redis";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
-
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
@@ -176,6 +180,12 @@ export async function POST(request: NextRequest) {
         { status: 422, headers: CORS_HEADERS }
       );
     }
+    await redis.set(
+      `tabby_checkout:${referenceId}`,
+      JSON.stringify({ items, customer, currency: region.currency, shipping,
+        discountAmount: 0, discountCode: undefined, token: token || "" }),
+      { ex: 60 * 60 * 24 }, // 24 hour expiry
+    );
 
     return NextResponse.json(
       { url: product.web_url, referenceId },

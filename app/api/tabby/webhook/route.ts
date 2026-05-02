@@ -1,13 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Redis } from "@upstash/redis";
 import type { CartItem, CustomerInfo } from "@/types/checkout.types";
 import { verifyCheckoutToken } from "@/app/lib/checkout-token";
-import { markTokenUsed } from "@/app/lib/used-tokens";
+import { markTokenUsed, isTokenUsed } from "@/app/lib/used-tokens";
 
 export const runtime = "nodejs";
 
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
+
+// ── Signature verification ─────────────────────────────────────────────────────
 function verifyTabbySignature(request: NextRequest): boolean {
-  const incoming = request.headers.get("x-webhook-signature")
-    ?? request.headers.get("x-tabby-signature");
+  const incoming =
+    request.headers.get("x-webhook-signature") ??
+    request.headers.get("x-tabby-signature");
 
   const secrets = [
     process.env.TABBY_WEBHOOK_SECRET_AED,
@@ -22,6 +30,37 @@ function verifyTabbySignature(request: NextRequest): boolean {
 
   return secrets.some((s) => s === incoming);
 }
+
+// ── Resolve checkout payload ───────────────────────────────────────────────────
+// Try JWT token first, fall back to Redis lookup by referenceId
+async function resolveCheckoutPayload(
+  jwtToken: string | undefined,
+  referenceId: string | undefined,
+) {
+  // 1. Try JWT if present and non-empty
+  if (jwtToken) {
+    try {
+      const payload = await verifyCheckoutToken(jwtToken);
+      console.log("[Tabby webhook] Resolved payload via JWT token");
+      return { payload, tokenKey: jwtToken };
+    } catch (err) {
+      console.warn("[Tabby webhook] JWT verify failed, trying Redis fallback:", err);
+    }
+  }
+
+  // 2. Fall back to Redis lookup by referenceId
+  if (referenceId) {
+    const raw = await redis.get(`tabby_checkout:${referenceId}`);
+    if (raw) {
+      console.log("[Tabby webhook] Resolved payload via Redis referenceId:", referenceId);
+      const payload = typeof raw === "string" ? JSON.parse(raw) : raw;
+      return { payload, tokenKey: referenceId };
+    }
+  }
+
+  throw new Error(`No checkout payload found for token=${jwtToken} referenceId=${referenceId}`);
+}
+
 // ── Shopify order creation ─────────────────────────────────────────────────────
 async function createShopifyOrder(
   items: CartItem[],
@@ -33,71 +72,70 @@ async function createShopifyOrder(
   discountCode?: string,
 ): Promise<string> {
   const domain = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN!;
-  const token  = process.env.SHOPIFY_ACCESS_TOKEN!;
+  const token = process.env.SHOPIFY_ACCESS_TOKEN!;
 
   const [firstName, ...rest] = (customer.name || "Guest").trim().split(" ");
   const lastName = rest.join(" ") || "-";
 
   const address = {
     first_name: firstName,
-    last_name:  lastName,
-    address1:   customer.address || "",
-    city:       customer.city    || "",
-    country:    customer.country || "AE",
-    phone:      customer.phone   || "",
+    last_name: lastName,
+    address1: customer.address || "",
+    city: customer.city || "",
+    country: customer.country || "AE",
+    phone: customer.phone || "",
   };
 
   const lineItems = items.map((item) =>
     item.variant_id
       ? { variant_id: parseInt(item.variant_id, 10), quantity: item.quantity }
       : {
-          title:             item.product_title,
-          price:             item.price.toFixed(2),
-          quantity:          item.quantity,
+          title: item.product_title,
+          price: item.price.toFixed(2),
+          quantity: item.quantity,
           requires_shipping: true,
-          taxable:           false,
+          taxable: false,
         },
   );
 
-  // Build draft order body
   const draftBody: Record<string, unknown> = {
-    line_items:       lineItems,
-    email:            customer.email,
+    line_items: lineItems,
+    email: customer.email,
     shipping_address: address,
-    billing_address:  address,
-
-    note:             `Paid via Tabby. Payment ID: ${tabbyPaymentId}`,
-    tags:             "Tabby, BNPL, custom-checkout",
-    send_receipt:     true,
+    billing_address: address,
+    note: `Paid via Tabby. Payment ID: ${tabbyPaymentId}`,
+    tags: "Tabby, BNPL, custom-checkout",
+    send_receipt: true,
     currency,
     ...(shipping > 0 && {
       shipping_line: {
-        title:  "Shipping",
-        price:  shipping.toFixed(2),
-        code:   "TABBY_SHIPPING",
+        title: "Shipping",
+        price: shipping.toFixed(2),
+        code: "TABBY_SHIPPING",
       },
     }),
-    ...(discountCode && discountAmount > 0 && {
-      applied_discount: {
-        title:        discountCode,
-        value:        discountAmount.toFixed(2),
-        value_type:   "fixed_amount",
-        description:  `Discount code: ${discountCode}`,
-      },
-    }),
+    ...(discountCode &&
+      discountAmount > 0 && {
+        applied_discount: {
+          title: discountCode,
+          value: discountAmount.toFixed(2),
+          value_type: "fixed_amount",
+          description: `Discount code: ${discountCode}`,
+        },
+      }),
   };
 
-    const draftRes = await fetch(
-      `https://${domain}/admin/api/2024-01/draft_orders.json`,
-      {
-        method:  "POST",
-        headers: {
-          "X-Shopify-Access-Token": token,
-          "Content-Type":           "application/json",
-        },
-        body: JSON.stringify({ draft_order: draftBody }),
+  const draftRes = await fetch(
+    `https://${domain}/admin/api/2024-01/draft_orders.json`,
+    {
+      method: "POST",
+      headers: {
+        "X-Shopify-Access-Token": token,
+        "Content-Type": "application/json",
       },
-    );
+      body: JSON.stringify({ draft_order: draftBody }),
+    },
+  );
 
   if (!draftRes.ok) {
     throw new Error(`Shopify draft order error: ${await draftRes.text()}`);
@@ -108,10 +146,10 @@ async function createShopifyOrder(
   const completeRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders/${draft.id}/complete.json?payment_pending=false`,
     {
-      method:  "PUT",
+      method: "PUT",
       headers: {
         "X-Shopify-Access-Token": token,
-        "Content-Type":           "application/json",
+        "Content-Type": "application/json",
       },
     },
   );
@@ -123,35 +161,6 @@ async function createShopifyOrder(
 
   const { draft_order: completed } = await completeRes.json();
   return completed.name;
-}
-
-
-async function captureTabbyPayment(
-  paymentId: string,
-  amount: string,
-  currency: string,
-): Promise<void> {
-  // Use correct API base per currency
-  const apiBase = currency === "SAR" ? "https://api.tabby.sa" : "https://api.tabby.ai";
-  
-  const secretKey = currency === "SAR"
-    ? process.env.TABBY_SECRET_KEY_SAR
-    : currency === "KWD"
-    ? process.env.TABBY_SECRET_KEY_KWD
-    : process.env.TABBY_SECRET_KEY_AED;
-
-  const res = await fetch(`${apiBase}/api/v1/payments/${paymentId}/captures`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${secretKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ amount }),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Tabby capture failed: ${await res.text()}`);
-  }
 }
 
 // ── Webhook handler ────────────────────────────────────────────────────────────
@@ -170,36 +179,45 @@ export async function POST(request: NextRequest) {
 
   console.log("[Tabby webhook] Received:", JSON.stringify(body, null, 2));
 
-  const status = (body.status || "").toLowerCase();
   const tabbyPaymentId = body.id;
   const currency = body.currency || "AED";
+  const status = (body.status || "").toLowerCase();
 
-  // ✅ Auto-capture when authorized
-  if (status === "authorized") {
-    console.log("[Tabby webhook] Payment authorized, capturing...");
-    try {
-      await captureTabbyPayment(tabbyPaymentId, body.amount, currency);
-      console.log("[Tabby webhook] Capture triggered for:", tabbyPaymentId);
-    } catch (err) {
-      console.error("[Tabby webhook] Capture failed:", err);
+  // ✅ Tabby quirk: status stays "authorized" even after capture
+  // Detect actual completion by checking captures array or closed_at
+  const isActuallyClosed =
+    status === "closed" ||
+    body.closed_at !== null ||
+    (Array.isArray(body.captures) && body.captures.length > 0);
+
+  if (!isActuallyClosed) {
+    console.log("[Tabby webhook] Payment not yet captured, ignoring. Status:", status);
+    return NextResponse.json({ received: true });
+  }
+
+  const referenceId: string | undefined = body.order?.reference_id;
+  const jwtToken: string | undefined =
+    body.meta?.token || body.token || undefined;
+
+  console.log("[Tabby webhook] resolving checkout — referenceId:", referenceId, "| hasJwt:", !!jwtToken);
+
+  // ── Idempotency: skip if already processed ─────────────────────
+  const idempotencyKey = `tabby_processed:${tabbyPaymentId}`;
+  try {
+    const alreadyProcessed = await redis.get(idempotencyKey);
+    if (alreadyProcessed) {
+      console.log("[Tabby webhook] Already processed, skipping:", tabbyPaymentId);
+      return NextResponse.json({ received: true });
     }
-    return NextResponse.json({ received: true });
-  }
-
-  // Create Shopify order on closed
-  if (status !== "closed") {
-    console.log("[Tabby webhook] Ignoring event:", body.status);
-    return NextResponse.json({ received: true });
-  }
-
-  const token = body.meta?.token || body.order?.reference_id;
-  if (!token) {
-    console.error("[Tabby webhook] No token/reference_id in payload");
-    return NextResponse.json({ received: true });
+  } catch (err) {
+    console.warn("[Tabby webhook] Redis idempotency check failed:", err);
   }
 
   try {
-    const checkoutPayload = await verifyCheckoutToken(token);
+    const { payload: checkoutPayload, tokenKey } = await resolveCheckoutPayload(
+      jwtToken,
+      referenceId,
+    );
 
     const orderName = await createShopifyOrder(
       checkoutPayload.items,
@@ -211,8 +229,18 @@ export async function POST(request: NextRequest) {
       checkoutPayload.discountCode,
     );
 
-    await markTokenUsed(token);
-    console.log(`[Tabby webhook] Order created: ${orderName} | Payment: ${tabbyPaymentId} | Currency: ${currency}`);
+    // Mark as processed in Redis (idempotency)
+    await redis.set(idempotencyKey, "1", { ex: 60 * 60 * 24 * 7 });
+
+    // Mark JWT token used if it was a JWT
+    if (jwtToken) await markTokenUsed(jwtToken);
+
+    // Clean up Redis checkout payload
+    if (referenceId) await redis.del(`tabby_checkout:${referenceId}`);
+
+    console.log(
+      `[Tabby webhook] ✅ Order created: ${orderName} | Payment: ${tabbyPaymentId} | Currency: ${currency}`,
+    );
   } catch (err) {
     console.error("[Tabby webhook] Failed:", err);
   }
