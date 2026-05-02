@@ -15,6 +15,8 @@ type Props = {
   onSelectAddress: (id: string) => void;
   onCustomerChange: (c: CustomerInfo) => void;
   onSaveNewAddress: (addr: NewAddrForm) => Promise<void>;
+  useNewAddress: boolean;
+  onUseNewAddress: (v: boolean) => void;
   onRequiredChange?: (flags: {
     provinceRequired: boolean;
     zipRequired: boolean;
@@ -32,6 +34,7 @@ export function DeliverySection({
   onCustomerChange,
   onSaveNewAddress,
   onRequiredChange,
+  onUseNewAddress
 }: Props) {
   const { getValues, watch } = useFormContext();
   const [showAddressForm, setShowAddressForm] = useState(
@@ -144,7 +147,11 @@ export function DeliverySection({
           </div>
           <button
             type="button"
-            onClick={() => setShowAddressForm(true)}
+            onClick={() => {
+              setShowAddressForm(false);
+              onUseNewAddress(false); // ← notify parent
+              setSaveError("");
+            }}
             className="text-sm text-[#1a6cff] hover:underline flex items-center gap-1"
           >
             + Add a new address

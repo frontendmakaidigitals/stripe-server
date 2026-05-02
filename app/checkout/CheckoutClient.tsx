@@ -386,9 +386,22 @@ export default function CheckoutClient({
     if (!selectedRate) setShippingError("Please select a shipping method");
     if (!method) setPaymentError("Please select a payment method");
 
+    const usingSavedAddress =
+      hasAddresses && !useNewAddress && selectedAddressId;
+
+    if (usingSavedAddress) {
+      // ── Saved address path — no RHF validation needed ──────────
+      if (!selectedRate || !method) return;
+      if (method === "stripe") return startStripe();
+      if (method === "tabby") return startTabby();
+      if (method === "tamara") return startTamara();
+      placeCODOrder();
+      return;
+    }
+
+    // ── New address path — validate via RHF ────────────────────
     methods.handleSubmit((data) => {
-      // Only reaches here if RHF validation passes
-      if (!selectedRate || !method) return; // still guard here
+      if (!selectedRate || !method) return;
 
       setCustomer((prev) => ({
         ...prev,
@@ -408,7 +421,7 @@ export default function CheckoutClient({
     })();
   }
   useEffect(() => {
-    methods.clearErrors();  
+    methods.clearErrors();
   }, [provinceRequired, zipRequired]);
 
   const shippingReady = hasAddresses
@@ -460,6 +473,8 @@ export default function CheckoutClient({
                         setZipRequired(flags.zipRequired);
                       }}
                       onCustomerChange={setCustomer}
+                      useNewAddress={useNewAddress} // ← add
+                      onUseNewAddress={setUseNewAddress} // ← add
                     />
 
                     <ShippingMethodSection
