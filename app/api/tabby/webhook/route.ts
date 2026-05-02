@@ -65,13 +65,11 @@ async function createShopifyOrder(
     email:            customer.email,
     shipping_address: address,
     billing_address:  address,
-    // ✅ Fixed: correct payment provider name and payment ID
+
     note:             `Paid via Tabby. Payment ID: ${tabbyPaymentId}`,
-    // ✅ Fixed: correct tags
     tags:             "Tabby, BNPL, custom-checkout",
     send_receipt:     true,
     currency,
-    // ✅ Pass shipping as a custom line or shipping line
     ...(shipping > 0 && {
       shipping_line: {
         title:  "Shipping",
@@ -79,7 +77,6 @@ async function createShopifyOrder(
         code:   "TABBY_SHIPPING",
       },
     }),
-    // ✅ Pass discount if any
     ...(discountCode && discountAmount > 0 && {
       applied_discount: {
         title:        discountCode,
@@ -130,7 +127,6 @@ async function createShopifyOrder(
 
 // ── Webhook handler ────────────────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
-  // ✅ Clone request before reading body so signature check can also read headers
   if (!verifyTabbySignature(request)) {
     console.warn("[Tabby webhook] Invalid signature — rejecting request");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -145,25 +141,18 @@ export async function POST(request: NextRequest) {
 
   console.log("[Tabby webhook] Received:", JSON.stringify(body, null, 2));
 
-  // ── Tabby webhook payload reference ──────────────────────────────────────
-  // {
-  //   id:      "wh_xxxx",
-  //   status:  "CLOSED",           ← top-level webhook event status
-  //   payment: {
-  //     id:     "pay_xxxx",
-  //     status: "CLOSED",          ← ✅ payment status is "CLOSED" when paid, NOT "AUTHORIZED"
-  //     amount: "100.00",
-  //     currency: "AED",
-  //   },
-  //   order: { reference_id: "..." },
-  // }
-
-  // ✅ Fixed: Tabby payment status is "CLOSED" (not "AUTHORIZED") when successfully paid
-  if (body.status !== "CLOSED" || body.payment?.status !== "CLOSED") {
-    console.log("[Tabby webhook] Ignoring non-CLOSED event:", body.status, body.payment?.status);
+  // ✅ Fix: status is lowercase and payment data is at top level
+  const status = (body.status || "").toLowerCase();
+  if (status !== "closed") {
+    console.log("[Tabby webhook] Ignoring non-closed event:", body.status);
     return NextResponse.json({ received: true });
   }
 
+  // ✅ Fix: payment id is body.id, currency/amount are top-level
+  const tabbyPaymentId = body.id;
+  const currency = body.currency || "AED";
+
+  // ✅ Fix: token is in body.meta.token OR body.order.reference_id
   const token = body.meta?.token || body.order?.reference_id;
   if (!token) {
     console.error("[Tabby webhook] No token/reference_id in payload");
@@ -173,27 +162,21 @@ export async function POST(request: NextRequest) {
   try {
     const checkoutPayload = await verifyCheckoutToken(token);
 
-
-    const currency = body.payment?.currency || checkoutPayload.currency || "AED";
-
     const orderName = await createShopifyOrder(
       checkoutPayload.items,
       checkoutPayload.customer,
       currency,
-      body.payment.id,
-      checkoutPayload.shipping   ?? 0,
+      tabbyPaymentId,
+      checkoutPayload.shipping ?? 0,
       checkoutPayload.discountAmount ?? 0,
       checkoutPayload.discountCode,
     );
 
-    // ✅ Fixed: await markTokenUsed to prevent race-condition replay attacks
     await markTokenUsed(token);
 
-    console.log(`[Tabby webhook] Order created: ${orderName} | Payment: ${body.payment.id} | Currency: ${currency}`);
+    console.log(`[Tabby webhook] Order created: ${orderName} | Payment: ${tabbyPaymentId} | Currency: ${currency}`);
   } catch (err) {
     console.error("[Tabby webhook] Failed:", err);
-    // Still return 200 so Tabby doesn't retry — log and handle manually
-    // Change to 500 if you want Tabby to retry on failure
   }
 
   return NextResponse.json({ received: true });
