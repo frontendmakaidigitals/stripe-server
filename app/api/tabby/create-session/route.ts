@@ -145,7 +145,14 @@ export async function POST(request: NextRequest) {
     : region.currency === "SAR"
     ? process.env.TABBY_PUBLIC_API_KEY_SAR
     : process.env.TABBY_PUBLIC_API_KEY_KWD;
-
+      console.log("[Tabby] Calling API:", {
+        url: `${region.apiBase}/api/v2/checkout`,
+        currency: region.currency,
+        apiKeyPrefix: apiKey?.slice(0, 15),
+        merchantCode,
+        amount: total.toFixed(2),
+        countryCode,
+      });
     // ── Call Tabby API ────────────────────────────────────────────
     const res = await fetch(`${region.apiBase}/api/v2/checkout`, {
 
@@ -157,14 +164,14 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(payload),
     });
 
-    if (!res.ok) {
-      const errorText = await res.text();
-      console.error("[Tabby] Session creation failed:", errorText);
-      return NextResponse.json(
-        { error: "Tabby session failed", detail: errorText },
-        { status: 502, headers: CORS_HEADERS }
-      );
-    }
+   if (!res.ok) {
+  const errorText = await res.text();
+  console.error("[Tabby] Session creation failed:", res.status, res.statusText, errorText);
+  return NextResponse.json(
+    { error: "Tabby session failed", detail: errorText },
+    { status: 502, headers: CORS_HEADERS }
+  );
+}
 
     const data = await res.json();
      
@@ -191,7 +198,7 @@ export async function POST(request: NextRequest) {
       discountCode: undefined,
       token: token || "",
     }),
-    { ex: 60 * 60 * 24 }, // 24 hours
+    { ex: 60 * 60 * 24 },  
   );
 
     return NextResponse.json(
