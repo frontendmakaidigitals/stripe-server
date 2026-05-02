@@ -1,111 +1,125 @@
 "use client";
 // app/checkout/CheckoutClient.tsx
 
-import Header from "../ui/header";
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { FormProvider } from "react-hook-form";
 import countriesLib from "i18n-iso-countries";
 import en from "i18n-iso-countries/langs/en.json";
-import { useForm, FormProvider, Form } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { checkoutSchemaWithFlags } from "../lib/checkout-schema";
-import type {
-  CheckoutPayload,
-  CustomerInfo,
-  ShopifyAddress,
-} from "@/types/checkout.types";
-import type {
-  PaymentMethod,
-  Step,
-  ShippingRate,
-  DiscountResult,
-  NewAddrForm,
-} from "@/types/checkout.types";
-import { isTabbyAvailable } from "../lib/tabby.config";
-import {
-  toCountryCode,
-  isCODAvailable,
-  COD_FEE_AED,
-} from "../lib/checkout-utils";
 
-import { ContactSection } from "../ui/contact-section";
-import { DeliverySection } from "../ui/delivery-section";
+import type { CheckoutPayload, CustomerInfo, ShopifyAddress } from "@/types/checkout.types";
+import type { PaymentMethod, Step } from "@/types/checkout.types";
+
+import { isTabbyAvailable } from "../lib/tabby.config";
+import { toCountryCode } from "../lib/checkout-utils";
+
+// ── Hooks ──────────────────────────────────────────────────────────────────────
+import { useExchangeRate }    from "../hooks/useExchangeRate";
+import { useCheckoutForm }    from "../hooks/useCheckoutForm";
+import { useAddress }         from "../hooks/useAddress";
+import { useShippingRates }   from "../hooks/useShippingRate";
+import { useCheckoutTotals }  from "../hooks/useCheckoutTotal";
+import { usePaymentHandlers } from "../hooks/usePaymentHandler";
+
+// ── UI sections ────────────────────────────────────────────────────────────────
+import Header                from "../ui/header";
+import { ContactSection }    from "../ui/contact-section";
+import { DeliverySection }   from "../ui/delivery-section";
 import { ShippingMethodSection } from "../ui/shipping-method";
-import { PaymentSection } from "../ui/payment-section";
-import { OrderSummary } from "../ui/order-summary";
-import { CODSuccess } from "../ui/cod-sucess";
-import { TABBY_SUPPORTED_CURRENCIES } from "../lib/tabby.config";
+import { PaymentSection }    from "../ui/payment-section";
+import { OrderSummary }      from "../ui/order-summary";
+import { CODSuccess }        from "../ui/cod-sucess";
+
 countriesLib.registerLocale(en);
 
-export default function CheckoutClient({
-  payload,
-}: {
+// ── Types ──────────────────────────────────────────────────────────────────────
+interface CheckoutClientProps {
   payload: CheckoutPayload;
-}) {
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+export default function CheckoutClient({ payload }: CheckoutClientProps) {
   const { items, currency, total, customer: prefill } = payload;
 
+  // ── Auth / identity ──────────────────────────────────────────────────────────
   const isLoggedIn = Boolean(prefill.email);
-  const [savedAddresses, setSavedAddresses] = useState<ShopifyAddress[]>(
-    prefill.addresses ?? [],
-  );
-  const hasAddresses = isLoggedIn && savedAddresses.length > 0;
-  const defaultAddr =
-    savedAddresses.find((a: ShopifyAddress) => a.is_default) ??
-    savedAddresses[0];
-
-  const [step, setStep] = useState<Step>(isLoggedIn ? "shipping" : "contact");
-  const [method, setMethod] = useState<PaymentMethod>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [orderId, setOrderId] = useState("");
-
-  const [shippingRates, setShippingRates] = useState<ShippingRate[]>([]);
-  const [selectedRate, setSelectedRate] = useState<ShippingRate | null>(null);
-  const [ratesLoading, setRatesLoading] = useState(false);
-
-  const [aedToBase, setAedToBase] = useState<number>(1);
-  const [discountResult, setDiscountResult] = useState<DiscountResult>(null);
-
-  const [selectedAddressId, setSelectedId] = useState<string>(
-    defaultAddr?.id ?? "",
-  );
-  const [useNewAddress, setUseNewAddress] = useState(false);
 
   const [customer, setCustomer] = useState<CustomerInfo>({
-    id: prefill.id || "",
-    name: prefill.name || "",
-    email: prefill.email || "",
-    phone: prefill.phone || "",
-    address: prefill.address || "",
-    city: prefill.city || "",
-    country: "United Arab Emirates",
-    countryCode: "AE", // ← seed this
-    addresses: prefill.addresses ?? [],
+    id:          prefill.id       || "",
+    name:        prefill.name     || "",
+    email:       prefill.email    || "",
+    phone:       prefill.phone    || "",
+    address:     prefill.address  || "",
+    city:        prefill.city     || "",
+    country:     "United Arab Emirates",
+    countryCode: "AE",
+    addresses:   prefill.addresses ?? [],
   });
 
-  // ── Exchange rate ──────────────────────────────────────────────
-  useEffect(() => {
-    if (currency === "AED") {
-      setAedToBase(1);
-      return;
-    }
-    fetch(`/api/exchange-rate?from=AED&to=${currency}`)
-      .then((r) => r.json())
-      .then((d) => setAedToBase(d.rate ?? 1))
-      .catch(() => setAedToBase(1));
-  }, [currency]);
+  // ── UI state ─────────────────────────────────────────────────────────────────
+  const [step,    setStep]    = useState<Step>(isLoggedIn ? "shipping" : "contact");
+  const [method,  setMethod]  = useState<PaymentMethod>(null);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState("");
+  const [orderId, setOrderId] = useState("");
 
-  // ── Derived totals ─────────────────────────────────────────────
-  const discountAmount = discountResult?.valid
-    ? discountResult.type === "percentage"
-      ? (total * discountResult.amount) / 100
-      : discountResult.amount
-    : 0;
+  const [shippingError, setShippingError] = useState("");
+  const [paymentError,  setPaymentError]  = useState("");
 
+  const [discountResult, setDiscountResult] = useState<any>(null);
+
+  // ── Custom hooks ─────────────────────────────────────────────────────────────
+  const aedToBase = useExchangeRate(currency);
+
+  const { methods, onRequiredChange } = useCheckoutForm(prefill);
+
+  const hasAddresses = isLoggedIn && (prefill.addresses ?? []).length > 0;
+
+  // Shipping rates need address state, so we bootstrap useAddress first with a
+  // placeholder for fetchShippingRates, then wire them together below.
+  const shippingRatesApi = useShippingRates({
+    currency,
+    total,
+    aedToBase,
+    items,
+    hasAddresses,
+    useNewAddress:     false, // overridden below after useAddress initialises
+    selectedAddressId: "",
+    savedAddresses:    prefill.addresses ?? [],
+    customer,
+  });
+
+  const address = useAddress({
+    customerId:        customer.id,
+    initialAddresses:  prefill.addresses ?? [],
+    customer,
+    fetchShippingRates: shippingRatesApi.fetchShippingRates,
+  });
+
+  // Re-create shippingRates with the real address state now available
+  const {
+    shippingRates,
+    selectedRate,
+    setSelectedRate,
+    ratesLoading,
+    fetchShippingRates,
+  } = useShippingRates({
+    currency,
+    total,
+    aedToBase,
+    items,
+    hasAddresses,
+    useNewAddress:     address.useNewAddress,
+    selectedAddressId: address.selectedAddressId,
+    savedAddresses:    address.savedAddresses,
+    customer,
+  });
+
+  // ── Derived current country (for COD availability) ───────────────────────────
   const currentCountry = (() => {
     let raw: any;
-    if (hasAddresses && !useNewAddress && selectedAddressId) {
-      const addr = savedAddresses.find(
-        (a: ShopifyAddress) => a.id === selectedAddressId,
+    if (hasAddresses && !address.useNewAddress && address.selectedAddressId) {
+      const addr = address.savedAddresses.find(
+        (a: ShopifyAddress) => a.id === address.selectedAddressId,
       );
       raw = addr?.country || customer.country;
     } else {
@@ -114,359 +128,136 @@ export default function CheckoutClient({
     return typeof raw === "object" && raw?.code ? raw.code : raw;
   })();
 
-  const codAvailable = isCODAvailable(currentCountry);
-  const shippingCostAED = selectedRate
-    ? parseFloat(selectedRate.price.amount) || 0
-    : 0;
-  const codFeeAED = method === "cod" && codAvailable ? COD_FEE_AED : 0;
-  const shippingCost = shippingCostAED * aedToBase;
-  const codFee = codFeeAED * aedToBase;
-  const grandTotal = total + shippingCost - discountAmount + codFee;
-
-  // ── Shipping rates ─────────────────────────────────────────────
-  async function fetchShippingRates(addr: CustomerInfo) {
-    if (!addr.city || !addr.country) return;
-    if (currency !== "AED" && aedToBase === 1) return;
-
-    const countryCode = toCountryCode(addr.country);
-    setRatesLoading(true);
-    try {
-      const res = await fetch("/api/shipping/rates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          address: {
-            address1: addr.address,
-            city: addr.city,
-            country: countryCode,
-            phone: addr.phone,
-            currency,
-            subtotalAED: currency === "AED" ? total : total / aedToBase,
-            lineItems: items.map((i) => ({
-              variantId: i.variant_id,
-              quantity: i.quantity,
-            })),
-          },
-        }),
-      });
-      const data = await res.json();
-      setShippingRates(data.rates ?? []);
-      setSelectedRate(data.rates?.[0] ?? null);
-    } finally {
-      setRatesLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    if (hasAddresses && !useNewAddress && selectedAddressId) {
-      const addr = savedAddresses.find(
-        (a: ShopifyAddress) => a.id === selectedAddressId,
-      );
-      if (addr) {
-        fetchShippingRates({
-          ...customer,
-          phone: addr.phone || customer.phone,
-          address: [addr.address1, addr.address2].filter(Boolean).join(", "),
-          city: addr.city,
-          country: addr.country,
-        });
-      }
-    } else {
-      fetchShippingRates(customer);
-    }
-  }, [
-    selectedAddressId,
-    useNewAddress,
-    customer.city,
-    customer.country,
-    customer.address,
+  // ── Totals ───────────────────────────────────────────────────────────────────
+  const totals = useCheckoutTotals({
+    total,
     aedToBase,
-  ]);
+    selectedRate,
+    method,
+    discountResult,
+    currentCountry,
+  });
 
-  // ── Helpers ────────────────────────────────────────────────────
-  function getOrderCustomer(): CustomerInfo {
-    const formValues = methods.getValues(); // ← read from form at submit time
-    const base = {
-      ...customer,
-      phone: formValues.phone || customer.phone, // ← get phone from form
-      country: toCountryCode(customer.country || ""),
-    };
-    if (hasAddresses && !useNewAddress) {
-      const addr = savedAddresses.find(
-        (a: ShopifyAddress) => a.id === selectedAddressId,
-      );
-      if (addr)
-        return {
-          ...base,
-          phone: addr.phone || formValues.phone || customer.phone,
-          address: [addr.address1, addr.address2].filter(Boolean).join(", "),
-          city: addr.city,
-          country: addr.country,
-        };
-    }
-    return base;
-  }
+  // ── Payment handlers ─────────────────────────────────────────────────────────
+  const { dispatchPayment } = usePaymentHandlers({
+    items,
+    currency,
+    payload,
+    shippingCost:    totals.shippingCost,
+    shippingCostAED: totals.shippingCostAED,
+    codFeeAED:       totals.codFeeAED,
+    selectedRate,
+    discountResult,
+    discountAmount:  totals.discountAmount,
+    setLoading,
+    setError,
+    setOrderId,
+    setStep,
+  });
 
+  // ── Discount ─────────────────────────────────────────────────────────────────
   async function handleApplyDiscount(code: string) {
     const res = await fetch("/api/discount/validate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code, subtotal: total }),
     });
-    const data = await res.json();
-    setDiscountResult(data);
+    setDiscountResult(await res.json());
   }
 
-  async function handleSaveNewAddress(newAddr: NewAddrForm) {
-    const res = await fetch("/api/customer/add-address", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ customerId: customer.id, address: newAddr }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to save address");
-
-    const formatted: ShopifyAddress = {
-      id: String(data.address.id),
-      name: `${newAddr.firstName} ${newAddr.lastName}`.trim(),
-      address1: data.address.address1,
-      address2: data.address.address2 || "",
-      city: data.address.city,
-      country: data.address.country,
-      phone: data.address.phone || "",
-      is_default: false,
+  // ── Resolve the customer to submit ───────────────────────────────────────────
+  function getOrderCustomer(): CustomerInfo {
+    const formValues = methods.getValues();
+    const base: CustomerInfo = {
+      ...customer,
+      phone:   formValues.phone || customer.phone,
+      country: toCountryCode(customer.country || ""),
     };
 
-    setSavedAddresses((prev) => [...prev, formatted]); // ← fixes the mutation bug
-    setSelectedId(formatted.id);
-    fetchShippingRates({
-      ...customer,
-      address: formatted.address1,
-      city: formatted.city,
-      country: formatted.country,
-      phone: formatted.phone,
-    });
-  }
-
-  async function startTabby(customerOverride?: CustomerInfo) {
-    setLoading(true);
-    setError("");
-    try {
-      const orderCustomer = customerOverride ?? getOrderCustomer();
-      const res = await fetch("/api/tabby/create-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          currency,
-          customer: orderCustomer,
-          token: payload.token,
-          cancelUrl: window.location.href,
-          shipping: shippingCost,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Tabby checkout failed");
-      window.location.href = data.url;
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-      setLoading(false);
+    if (hasAddresses && !address.useNewAddress) {
+      const saved = address.savedAddresses.find(
+        (a: ShopifyAddress) => a.id === address.selectedAddressId,
+      );
+      if (saved) {
+        return {
+          ...base,
+          phone:   saved.phone || formValues.phone || customer.phone,
+          address: [saved.address1, saved.address2].filter(Boolean).join(", "),
+          city:    saved.city,
+          country: saved.country,
+        };
+      }
     }
+    return base;
   }
 
-  async function startStripe(customerOverride?: CustomerInfo) {
-    setLoading(true);
-    setError("");
-    try {
-      const orderCustomer = customerOverride ?? getOrderCustomer();
-      const res = await fetch("/api/stripe/create-checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          currency,
-          customer: orderCustomer,
-          token: payload.token,
-          shipping: shippingCost,
-          shippingHandle: selectedRate?.handle,
-          discountCode: discountResult?.valid ? discountResult.code : undefined,
-          discountAmount: discountResult?.valid ? discountAmount : 0,
-          discountType: discountResult?.valid ? discountResult.type : null,
-          cancelUrl: window.location.href,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Stripe checkout failed");
-      window.location.href = data.url;
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-      setLoading(false);
-    }
-  }
-
-  async function startTamara(customerOverride?: CustomerInfo) {
-    setLoading(true);
-    setError("");
-    try {
-      const orderCustomer = customerOverride ?? getOrderCustomer();
-      const res = await fetch("/api/tamara/create-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          currency,
-          customer: orderCustomer,
-          token: payload.token,
-          shipping: shippingCost,
-          cancelUrl: window.location.href,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Tamara checkout failed");
-      window.location.href = data.url;
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-      setLoading(false);
-    }
-  }
-
-  async function placeCODOrder(customerOverride?: CustomerInfo) {
-    setLoading(true);
-    setError("");
-    try {
-      const orderCustomer = customerOverride ?? getOrderCustomer();
-      const res = await fetch("/api/orders/cod", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          currency,
-          customer: orderCustomer,
-          token: payload.token,
-          shipping: shippingCostAED,
-          codFee: codFeeAED,
-          shippingHandle: selectedRate?.handle,
-          discountCode: discountResult?.valid ? discountResult.code : undefined,
-          discountAmount: discountResult?.valid ? discountAmount : 0,
-          discountType: discountResult?.valid ? discountResult.type : null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Order failed");
-      setOrderId(data.orderId);
-      setStep("cod-success");
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const isTabbySupported = isTabbyAvailable(grandTotal, currency);
-
-  const [provinceRequired, setProvinceRequired] = useState(false);
-  const [zipRequired, setZipRequired] = useState(false);
-
-  const methods = useForm({
-    resolver: zodResolver(
-      checkoutSchemaWithFlags(provinceRequired, zipRequired),
-    ),
-    defaultValues: {
-      firstName: prefill.name?.split(" ")[0] || "",
-      lastName: prefill.name?.split(" ").slice(1).join(" ") || "",
-      email: prefill.email || "",
-      phone: prefill.phone || "",
-      address1: prefill.address || "",
-      address2: "",
-      city: prefill.city || "",
-      countryCode: "AE",
-      province: "",
-      zip: "",
-    },
-    mode: "onSubmit", // only validate on submit
-    reValidateMode: "onChange", // re-validate a field once it's been fixed
-  });
-
-  const [shippingError, setShippingError] = useState("");
-  const [paymentError, setPaymentError] = useState("");
-
+  // ── Pay Now handler ──────────────────────────────────────────────────────────
   function handlePayNow() {
-    // Always check these first
-    if (!selectedRate) {
-      setShippingError("Please select a shipping method");
-    }
-    if (!method) {
-      setPaymentError("Please select a payment method");
-    }
+    if (!selectedRate) setShippingError("Please select a shipping method");
+    if (!method)       setPaymentError("Please select a payment method");
     if (!selectedRate || !method) return;
 
-    const usingSavedAddress =
-      hasAddresses && !useNewAddress && selectedAddressId;
-
-    if (usingSavedAddress) {
-      if (method === "stripe") return startStripe();
-      if (method === "tabby") return startTabby();
-      if (method === "tamara") return startTamara();
-      placeCODOrder();
+    // Saved-address path — no form validation needed
+    if (hasAddresses && !address.useNewAddress && address.selectedAddressId) {
+      dispatchPayment(method, getOrderCustomer());
       return;
     }
 
-    // Guest / new address path — RHF validates and shows field errors
+    // Guest / new-address path — validate form first
     methods.handleSubmit(
-      // ✅ onValid — form passed validation
       (data) => {
         const freshCustomer: CustomerInfo = {
           ...customer,
-          name: `${data.firstName} ${data.lastName}`.trim(),
-          email: data.email,
-          phone: data.phone,
-          address: data.address1,
-          city: data.city,
+          name:        `${data.firstName} ${data.lastName}`.trim(),
+          email:       data.email,
+          phone:       data.phone,
+          address:     data.address1,
+          city:        data.city,
           countryCode: data.countryCode,
-          country: data.countryCode,
+          country:     data.countryCode,
         };
         setCustomer(freshCustomer);
-        if (method === "stripe") return startStripe(freshCustomer);
-        if (method === "tabby") return startTabby(freshCustomer);
-        if (method === "tamara") return startTamara(freshCustomer);
-        placeCODOrder(freshCustomer);
+        dispatchPayment(method, freshCustomer);
       },
-      // ✅ onInvalid — show a top-level message so user knows something is wrong
-      (errors) => {
-        console.log("[Checkout] Validation errors:", errors);
+      (validationErrors) => {
+        console.log("[Checkout] Validation errors:", validationErrors);
         setError("Please fill in all required fields above.");
       },
     )();
   }
-  useEffect(() => {
-    methods.clearErrors();
-  }, [provinceRequired, zipRequired]);
-  const formValues = methods.watch();
 
+  // ── Shipping-ready guard (controls button disabled state) ────────────────────
+  const formValues = methods.watch();
   const shippingReady = hasAddresses
-    ? Boolean(selectedAddressId) || useNewAddress
+    ? Boolean(address.selectedAddressId) || address.useNewAddress
     : Boolean(
         formValues.address1 &&
-        formValues.city &&
-        formValues.phone &&
+        formValues.city     &&
+        formValues.phone    &&
         formValues.firstName,
       );
 
-  // ── Render ─────────────────────────────────────────────────────
+  const isTabbySupported = isTabbyAvailable(totals.grandTotal, currency);
+
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <FormProvider {...methods}>
       <div
         style={{ fontFamily: "'Söhne', 'Helvetica Neue', Arial, sans-serif" }}
         className="min-h-screen bg-white text-[#1a1a1a]"
       >
+        {/* ── Top bar ── */}
         <div className="flex w-full justify-center py-4 border-b border-gray-200">
           <Header />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+          {/* ── Left column — form ── */}
           <div className="min-h-[calc(100vh-65px)]">
             <main className="w-full flex container py-10 justify-end">
               <div className="w-full max-w-lg">
+
                 {step === "cod-success" ? (
                   <CODSuccess
                     orderId={orderId}
@@ -484,19 +275,16 @@ export default function CheckoutClient({
                     <DeliverySection
                       isLoggedIn={isLoggedIn}
                       hasAddresses={hasAddresses}
-                      savedAddresses={savedAddresses}
-                      defaultAddr={defaultAddr}
-                      selectedAddressId={selectedAddressId}
+                      savedAddresses={address.savedAddresses}
+                      defaultAddr={address.defaultAddr}
+                      selectedAddressId={address.selectedAddressId}
                       customer={customer}
-                      onSelectAddress={setSelectedId}
-                      onSaveNewAddress={handleSaveNewAddress}
-                      onRequiredChange={(flags) => {
-                        setProvinceRequired(flags.provinceRequired);
-                        setZipRequired(flags.zipRequired);
-                      }}
+                      useNewAddress={address.useNewAddress}
+                      onSelectAddress={address.setSelectedAddressId}
+                      onSaveNewAddress={address.handleSaveNewAddress}
+                      onUseNewAddress={address.setUseNewAddress}
+                      onRequiredChange={onRequiredChange}
                       onCustomerChange={setCustomer}
-                      useNewAddress={useNewAddress} // ← add
-                      onUseNewAddress={setUseNewAddress} // ← add
                     />
 
                     <ShippingMethodSection
@@ -505,37 +293,39 @@ export default function CheckoutClient({
                       loading={ratesLoading}
                       currency={currency}
                       aedToBase={aedToBase}
-                      error={shippingError} // ← was fieldErrors.shipping
+                      error={shippingError}
                       onSelect={(rate) => {
                         setSelectedRate(rate);
-                        setShippingError(""); // ← was setFieldErrors(...)
+                        setShippingError("");
                       }}
                     />
 
                     <PaymentSection
                       method={method}
-                      codAvailable={codAvailable}
-                      error={paymentError} // ← was fieldErrors.payment
+                      codAvailable={totals.codAvailable}
+                      error={paymentError}
                       isTabbyAvailable={isTabbySupported}
                       onChange={(m) => {
                         setMethod(m);
-                        setPaymentError(""); // ← was setFieldErrors(...)
+                        setPaymentError("");
                       }}
                     />
 
+                    {/* ── Global form error ── */}
                     {error && (
                       <div className="mb-4 rounded-[6px] border border-[#fecaca] bg-[#fef2f2] px-4 py-3 text-sm text-[#dc2626]">
                         {error}
                       </div>
                     )}
 
+                    {/* ── Submit ── */}
                     <button
                       type="button"
                       onClick={handlePayNow}
                       disabled={
                         !method ||
                         loading ||
-                        (!shippingReady && !(hasAddresses && !useNewAddress))
+                        (!shippingReady && !(hasAddresses && !address.useNewAddress))
                       }
                       className={`w-full rounded-[6px] py-4 text-base font-semibold text-white transition-all ${
                         !method || loading
@@ -550,13 +340,10 @@ export default function CheckoutClient({
                           : "Place order"}
                     </button>
 
+                    {/* ── Footer links ── */}
                     <div className="mt-6 flex justify-center gap-6 text-xs text-[#aaa]">
-                      <a href="#" className="hover:text-[#555]">
-                        Privacy policy
-                      </a>
-                      <a href="#" className="hover:text-[#555]">
-                        Terms of service
-                      </a>
+                      <a href="#" className="hover:text-[#555]">Privacy policy</a>
+                      <a href="#" className="hover:text-[#555]">Terms of service</a>
                     </div>
                   </>
                 )}
@@ -564,19 +351,20 @@ export default function CheckoutClient({
             </main>
           </div>
 
+          {/* ── Right column — order summary ── */}
           <OrderSummary
             items={items}
             currency={currency}
             total={total}
-            shippingCost={shippingCost}
-            codFee={codFee}
-            grandTotal={grandTotal}
+            shippingCost={totals.shippingCost}
+            codFee={totals.codFee}
+            grandTotal={totals.grandTotal}
             method={method}
-            codAvailable={codAvailable}
+            codAvailable={totals.codAvailable}
             ratesLoading={ratesLoading}
             selectedRate={selectedRate}
             discountResult={discountResult}
-            discountAmount={discountAmount}
+            discountAmount={totals.discountAmount}
             onApplyDiscount={handleApplyDiscount}
           />
         </div>
