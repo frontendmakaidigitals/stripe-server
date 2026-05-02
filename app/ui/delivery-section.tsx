@@ -1,10 +1,10 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useFormContext } from "react-hook-form";
 import type { CustomerInfo, ShopifyAddress } from "@/types/checkout.types";
 import type { NewAddrForm } from "@/types/checkout.types";
 import { AddressForm } from "./address-form";
-import { useRef } from "react";
+
 type Props = {
   isLoggedIn: boolean;
   hasAddresses: boolean;
@@ -37,6 +37,7 @@ export function DeliverySection({
   onUseNewAddress,
 }: Props) {
   const { getValues, watch } = useFormContext();
+
   const [showAddressForm, setShowAddressForm] = useState(
     !isLoggedIn || !hasAddresses,
   );
@@ -45,29 +46,46 @@ export function DeliverySection({
 
   const showSavedAddresses = isLoggedIn && hasAddresses && !showAddressForm;
 
-  // Keep customer in sync with RHF values for shipping rate fetching
-  const countryCode = watch("countryCode");
-  const city = watch("city");
-  const address1 = watch("address1");
+  // ── Watch only fields needed for shipping-rate re-fetching ──────────────────
+  // IMPORTANT: "phone" is intentionally excluded — it is read at submit time
+  // via getValues(), not needed for shipping rates, and watching it causes
+  // PhoneInput to lose focus on every keystroke because the watch triggers a
+  // DeliverySection re-render → AddressForm re-render → PhoneInput remounts.
+  const [
+    watchedFirstName,
+    watchedLastName,
+    watchedAddress1,
+    watchedCity,
+    watchedCountryCode,
+  ] = watch(["firstName", "lastName", "address1", "city", "countryCode"]);
 
-  const firstName = watch("firstName");
-  const lastName = watch("lastName");
+  // Use refs to avoid stale closures without adding customer/onCustomerChange
+  // to the effect deps (which would cause an infinite re-render loop).
   const onCustomerChangeRef = useRef(onCustomerChange);
   onCustomerChangeRef.current = onCustomerChange;
   const customerRef = useRef(customer);
   customerRef.current = customer;
+
   useEffect(() => {
     if (!showAddressForm) return;
     onCustomerChangeRef.current({
       ...customerRef.current,
-      name: `${firstName} ${lastName}`.trim(),
-      address: address1,
-      city,
-      countryCode,
-      country: countryCode,
-      // phone is implicitly included via ...customerRef.current
+      name:        `${watchedFirstName} ${watchedLastName}`.trim(),
+      address:     watchedAddress1,
+      city:        watchedCity,
+      countryCode: watchedCountryCode,
+      country:     watchedCountryCode,
     } as CustomerInfo);
-  }, [firstName, lastName, address1, city, countryCode, showAddressForm]);
+  }, [
+    watchedFirstName,
+    watchedLastName,
+    watchedAddress1,
+    watchedCity,
+    watchedCountryCode,
+    showAddressForm,
+  ]);
+
+  // ── Save new address (logged-in flow) ───────────────────────────────────────
   async function handleSave() {
     const data = getValues();
     if (!data.firstName || !data.address1 || !data.city) {
@@ -78,26 +96,25 @@ export function DeliverySection({
     setSaveError("");
     try {
       await onSaveNewAddress({
-        firstName: data.firstName,
-        lastName: data.lastName,
-        address1: data.address1,
-        address2: data.address2,
-        city: data.city,
+        firstName:   data.firstName,
+        lastName:    data.lastName,
+        address1:    data.address1,
+        address2:    data.address2,
+        city:        data.city,
         countryCode: data.countryCode,
-        province: data.province,
-        zip: data.zip,
-        phone: data.phone,
+        province:    data.province,
+        zip:         data.zip,
+        phone:       data.phone,
       });
       setShowAddressForm(false);
     } catch (err: unknown) {
-      setSaveError(
-        err instanceof Error ? err.message : "Could not save address",
-      );
+      setSaveError(err instanceof Error ? err.message : "Could not save address");
     } finally {
       setSaving(false);
     }
   }
 
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <section className="mb-8">
       <h2 className="text-sm text-gray-600 mb-4">Ship to</h2>
@@ -142,8 +159,8 @@ export function DeliverySection({
           <button
             type="button"
             onClick={() => {
-              setShowAddressForm(true); // ← was false, should be true
-              onUseNewAddress(true); // ← was false, should be true
+              setShowAddressForm(true);
+              onUseNewAddress(true);
               setSaveError("");
             }}
             className="text-sm text-[#1a6cff] hover:underline flex items-center gap-1"
@@ -173,10 +190,7 @@ export function DeliverySection({
             onSave={isLoggedIn && hasAddresses ? handleSave : undefined}
             onCancel={
               isLoggedIn && hasAddresses
-                ? () => {
-                    setShowAddressForm(false);
-                    setSaveError("");
-                  }
+                ? () => { setShowAddressForm(false); setSaveError(""); }
                 : undefined
             }
             saving={saving}

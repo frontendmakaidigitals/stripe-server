@@ -52,6 +52,8 @@ const countries = Object.entries(countriesLib.getNames("en"))
 const INPUT =
   "w-full border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm outline-none focus:border-[#1a1a1a] transition-colors";
 
+const INPUT_ERROR = "border-red-400 bg-red-50";
+
 type Props = {
   onSave?: () => void;
   onCancel?: () => void;
@@ -74,8 +76,9 @@ export function AddressForm({
     register,
     control,
     watch,
-    formState: { errors, isSubmitted },
+    formState: { errors, submitCount }, // ← submitCount forces re-render after each submit attempt
   } = useFormContext();
+
   const [countryData, setCountryData] = useState<CountryData | null>(null);
   const [loadingCountry, setLoadingCountry] = useState(false);
 
@@ -112,10 +115,12 @@ export function AddressForm({
   const shows = (field: string) =>
     !countryData || loadingCountry || visibleFields.includes(field);
   const isOptional = (field: string) => optionalFields.includes(field);
+
   const showCity = shows("city");
   const showProvince = shows("province") && (loadingCountry || hasProvinces);
   const showCityAndProvince = showCity && showProvince;
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="mt-3 flex flex-col gap-3 border border-gray-200 rounded-lg p-4 bg-white">
       <p className="text-sm font-medium text-[#1a1a1a]">New address</p>
@@ -168,31 +173,27 @@ export function AddressForm({
       />
 
       {/* ── First / Last name ── */}
-      <div>
-        <div className="flex gap-3">
-          <input
-            {...register("firstName")}
-            className={`${INPUT} ${errors.firstName ? "border-red-400! bg-red-50!" : ""}`}
-            placeholder={labels?.firstName ?? "First name"}
-          />
-          <input
-            {...register("lastName")}
-            className={INPUT}
-            placeholder={labels?.lastName ?? "Last name"}
-          />
-        </div>
-      </div>
-
-      {/* ── Address 1 ── */}
-      <div>
+      <div className="flex gap-3">
         <input
-          {...register("address1")}
-          className={`${INPUT} ${errors.address1 ? "border-red-400! bg-red-50!" : ""}`}
-          placeholder={labels?.address1 ?? "Address"}
+          {...register("firstName")}
+          className={`${INPUT} ${errors.firstName ? INPUT_ERROR : ""}`}
+          placeholder={labels?.firstName ?? "First name"}
+        />
+        <input
+          {...register("lastName")}
+          className={`${INPUT} ${errors.lastName ? INPUT_ERROR : ""}`}
+          placeholder={labels?.lastName ?? "Last name"}
         />
       </div>
 
-      {/* ── Address 2 ── */}
+      {/* ── Address 1 ── */}
+      <input
+        {...register("address1")}
+        className={`${INPUT} ${errors.address1 ? INPUT_ERROR : ""}`}
+        placeholder={labels?.address1 ?? "Address"}
+      />
+
+      {/* ── Address 2 (optional) ── */}
       {shows("address2") && (
         <input
           {...register("address2")}
@@ -203,88 +204,83 @@ export function AddressForm({
 
       {/* ── City + Province row ── */}
       {(showCity || showProvince) && (
-        <div>
-          <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_.8fr] gap-3">
-            {showCity && (
-              <input
-                {...register("city")}
-                className={`${INPUT} ${errors.city ? "border-red-400! bg-red-50!" : ""}`}
-                placeholder={labels?.city ?? "City"}
+        <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_.8fr] gap-3">
+          {showCity && (
+            <input
+              {...register("city")}
+              className={`${INPUT} ${errors.city ? INPUT_ERROR : ""}`}
+              placeholder={labels?.city ?? "City"}
+            />
+          )}
+
+          {showProvince &&
+            (loadingCountry ? (
+              <Skeleton
+                className={`h-[46px] ${showCityAndProvince ? "flex-1" : "w-full"} rounded-[6px]`}
               />
-            )}
+            ) : hasProvinces ? (
+              <Controller
+                name="province"
+                control={control}
+                render={({ field, fieldState }) => (
+                  <div>
+                    <Combobox
+                      items={provinces}
+                      value={
+                        provinces.find((p) => p.code === field.value)?.name ??
+                        ""
+                      }
+                      onValueChange={(v: any) => {
+                        const name =
+                          typeof v === "object" && v?.name ? v.name : v;
+                        const province = provinces.find((p) => p.name === name);
+                        field.onChange(province?.code ?? name);
+                      }}
+                    >
+                      <ComboboxInput
+                        placeholder={zoneLabel}
+                        className={`w-full rounded-sm! border bg-white h-11.5! text-sm outline-none focus:border-[#1a1a1a] ${
+                          fieldState.error
+                            ? "border-red-400! bg-red-50!"
+                            : "border-gray-300"
+                        }`}
+                      />
+                      <ComboboxContent className="rounded-md! max-h-72">
+                        <ComboboxEmpty>
+                          No {zoneLabel.toLowerCase()} found.
+                        </ComboboxEmpty>
+                        <ComboboxList>
+                          {(item) => (
+                            <ComboboxItem
+                              value={item.name}
+                              key={item.code}
+                              className="rounded-md! py-3"
+                            >
+                              {item.name}
+                            </ComboboxItem>
+                          )}
+                        </ComboboxList>
+                      </ComboboxContent>
+                    </Combobox>
+                  </div>
+                )}
+              />
+            ) : null)}
 
-            {showProvince &&
-              (loadingCountry ? (
-                <Skeleton
-                  className={`h-[46px] ${showCityAndProvince ? "flex-1" : "w-full"} rounded-[6px]`}
-                />
-              ) : hasProvinces ? (
-                <Controller
-                  name="province"
-                  control={control}
-                  render={({ field, fieldState }) => (
-                    <div className="">
-                      <Combobox
-                        items={provinces}
-                        value={
-                          provinces.find((p) => p.code === field.value)?.name ??
-                          ""
-                        }
-                        onValueChange={(v: any) => {
-                          const name =
-                            typeof v === "object" && v?.name ? v.name : v;
-                          const province = provinces.find(
-                            (p) => p.name === name,
-                          );
-                          field.onChange(province?.code ?? name);
-                        }}
-                      >
-                        <ComboboxInput
-                          placeholder={zoneLabel}
-                          className={`w-full rounded-sm! border bg-white h-11.5! text-sm outline-none focus:border-[#1a1a1a] ${
-                            fieldState.error
-                              ? "border-red-400! bg-red-50!"
-                              : "border-gray-300"
-                          }`}
-                        />
-                        <ComboboxContent className="rounded-md! max-h-72">
-                          <ComboboxEmpty>
-                            No {zoneLabel.toLowerCase()} found.
-                          </ComboboxEmpty>
-                          <ComboboxList>
-                            {(item) => (
-                              <ComboboxItem
-                                value={item.name}
-                                key={item.code}
-                                className="rounded-md! py-3"
-                              >
-                                {item.name}
-                              </ComboboxItem>
-                            )}
-                          </ComboboxList>
-                        </ComboboxContent>
-                      </Combobox>
-                    </div>
-                  )}
-                />
-              ) : null)}
-
-            {shows("zip") && (
-              <div className={`${hasProvinces ? "col-span-2" : "col-span-1"}`}>
-                <input
-                  {...register("zip")}
-                  className={`${INPUT} ${errors.zip ? "border-red-400! bg-red-50!" : ""}`}
-                  placeholder={
-                    isOptional("zip") ? `${zipLabel} (optional)` : zipLabel
-                  }
-                />
-              </div>
-            )}
-          </div>
+          {/* ── ZIP ── */}
+          {shows("zip") && (
+            <div className={hasProvinces ? "col-span-2" : "col-span-1"}>
+              <input
+                {...register("zip")}
+                className={`${INPUT} ${errors.zip ? INPUT_ERROR : ""}`}
+                placeholder={
+                  isOptional("zip") ? `${zipLabel} (optional)` : zipLabel
+                }
+              />
+            </div>
+          )}
         </div>
       )}
-
-      {/* ── ZIP ── */}
 
       {/* ── Phone ── */}
       {shows("phone") && (
