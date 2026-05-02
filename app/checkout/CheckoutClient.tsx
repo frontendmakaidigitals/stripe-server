@@ -26,6 +26,7 @@ import {
   isCODAvailable,
   COD_FEE_AED,
 } from "../lib/checkout-utils";
+
 import { ContactSection } from "../ui/contact-section";
 import { DeliverySection } from "../ui/delivery-section";
 import { ShippingMethodSection } from "../ui/shipping-method";
@@ -248,118 +249,118 @@ export default function CheckoutClient({
   }
 
   async function startTabby(customerOverride?: CustomerInfo) {
-  setLoading(true);
-  setError("");
-  try {
-    const orderCustomer = customerOverride ?? getOrderCustomer();
-    const res = await fetch("/api/tabby/create-session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        items,
-        currency,
-        customer: orderCustomer,
-        token: payload.token,
-        cancelUrl: window.location.href,
-        shipping: shippingCost,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Tabby checkout failed");
-    window.location.href = data.url;
-  } catch (err: unknown) {
-    setError(err instanceof Error ? err.message : "Something went wrong");
-    setLoading(false);
+    setLoading(true);
+    setError("");
+    try {
+      const orderCustomer = customerOverride ?? getOrderCustomer();
+      const res = await fetch("/api/tabby/create-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items,
+          currency,
+          customer: orderCustomer,
+          token: payload.token,
+          cancelUrl: window.location.href,
+          shipping: shippingCost,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Tabby checkout failed");
+      window.location.href = data.url;
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      setLoading(false);
+    }
   }
-}
 
-async function startStripe(customerOverride?: CustomerInfo) {
-  setLoading(true);
-  setError("");
-  try {
-    const orderCustomer = customerOverride ?? getOrderCustomer();
-    const res = await fetch("/api/stripe/create-checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        items,
-        currency,
-        customer: orderCustomer,
-        token: payload.token,
-        shipping: shippingCost,
-        shippingHandle: selectedRate?.handle,
-        discountCode: discountResult?.valid ? discountResult.code : undefined,
-        discountAmount: discountResult?.valid ? discountAmount : 0,
-        discountType: discountResult?.valid ? discountResult.type : null,
-        cancelUrl: window.location.href,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Stripe checkout failed");
-    window.location.href = data.url;
-  } catch (err: unknown) {
-    setError(err instanceof Error ? err.message : "Something went wrong");
-    setLoading(false);
+  async function startStripe(customerOverride?: CustomerInfo) {
+    setLoading(true);
+    setError("");
+    try {
+      const orderCustomer = customerOverride ?? getOrderCustomer();
+      const res = await fetch("/api/stripe/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items,
+          currency,
+          customer: orderCustomer,
+          token: payload.token,
+          shipping: shippingCost,
+          shippingHandle: selectedRate?.handle,
+          discountCode: discountResult?.valid ? discountResult.code : undefined,
+          discountAmount: discountResult?.valid ? discountAmount : 0,
+          discountType: discountResult?.valid ? discountResult.type : null,
+          cancelUrl: window.location.href,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Stripe checkout failed");
+      window.location.href = data.url;
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      setLoading(false);
+    }
   }
-}
 
-async function startTamara(customerOverride?: CustomerInfo) {
-  setLoading(true);
-  setError("");
-  try {
-    const orderCustomer = customerOverride ?? getOrderCustomer();
-    const res = await fetch("/api/tamara/create-session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        items,
-        currency,
-        customer: orderCustomer,
-        token: payload.token,
-        shipping: shippingCost,
-        cancelUrl: window.location.href,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Tamara checkout failed");
-    window.location.href = data.url;
-  } catch (err: unknown) {
-    setError(err instanceof Error ? err.message : "Something went wrong");
-    setLoading(false);
+  async function startTamara(customerOverride?: CustomerInfo) {
+    setLoading(true);
+    setError("");
+    try {
+      const orderCustomer = customerOverride ?? getOrderCustomer();
+      const res = await fetch("/api/tamara/create-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items,
+          currency,
+          customer: orderCustomer,
+          token: payload.token,
+          shipping: shippingCost,
+          cancelUrl: window.location.href,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Tamara checkout failed");
+      window.location.href = data.url;
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      setLoading(false);
+    }
   }
-}
 
-async function placeCODOrder(customerOverride?: CustomerInfo) {
-  setLoading(true);
-  setError("");
-  try {
-    const orderCustomer = customerOverride ?? getOrderCustomer();
-    const res = await fetch("/api/orders/cod", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        items,
-        currency,
-        customer: orderCustomer,
-        token: payload.token,
-        shipping: shippingCostAED,
-        codFee: codFeeAED,
-        shippingHandle: selectedRate?.handle,
-        discountCode: discountResult?.valid ? discountResult.code : undefined,
-        discountAmount: discountResult?.valid ? discountAmount : 0,
-        discountType: discountResult?.valid ? discountResult.type : null,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Order failed");
-    setOrderId(data.orderId);
-    setStep("cod-success");
-  } catch (err: unknown) {
-    setError(err instanceof Error ? err.message : "Something went wrong");
-  } finally {
-    setLoading(false);
+  async function placeCODOrder(customerOverride?: CustomerInfo) {
+    setLoading(true);
+    setError("");
+    try {
+      const orderCustomer = customerOverride ?? getOrderCustomer();
+      const res = await fetch("/api/orders/cod", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items,
+          currency,
+          customer: orderCustomer,
+          token: payload.token,
+          shipping: shippingCostAED,
+          codFee: codFeeAED,
+          shippingHandle: selectedRate?.handle,
+          discountCode: discountResult?.valid ? discountResult.code : undefined,
+          discountAmount: discountResult?.valid ? discountAmount : 0,
+          discountType: discountResult?.valid ? discountResult.type : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Order failed");
+      setOrderId(data.orderId);
+      setStep("cod-success");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
   const isTabbySupported = isTabbyAvailable(grandTotal, currency);
 
@@ -390,55 +391,65 @@ async function placeCODOrder(customerOverride?: CustomerInfo) {
   const [paymentError, setPaymentError] = useState("");
 
   function handlePayNow() {
-  if (!selectedRate) setShippingError("Please select a shipping method");
-  if (!method) setPaymentError("Please select a payment method");
-
-  const usingSavedAddress = hasAddresses && !useNewAddress && selectedAddressId;
-
-  if (usingSavedAddress) {
+    // Always check these first
+    if (!selectedRate) {
+      setShippingError("Please select a shipping method");
+    }
+    if (!method) {
+      setPaymentError("Please select a payment method");
+    }
     if (!selectedRate || !method) return;
-    if (method === "stripe") return startStripe();
-    if (method === "tabby") return startTabby();
-    if (method === "tamara") return startTamara();
-    placeCODOrder();
-    return;
+
+    const usingSavedAddress =
+      hasAddresses && !useNewAddress && selectedAddressId;
+
+    if (usingSavedAddress) {
+      if (method === "stripe") return startStripe();
+      if (method === "tabby") return startTabby();
+      if (method === "tamara") return startTamara();
+      placeCODOrder();
+      return;
+    }
+
+    // Guest / new address path — RHF validates and shows field errors
+    methods.handleSubmit(
+      // ✅ onValid — form passed validation
+      (data) => {
+        const freshCustomer: CustomerInfo = {
+          ...customer,
+          name: `${data.firstName} ${data.lastName}`.trim(),
+          email: data.email,
+          phone: data.phone,
+          address: data.address1,
+          city: data.city,
+          countryCode: data.countryCode,
+          country: data.countryCode,
+        };
+        setCustomer(freshCustomer);
+        if (method === "stripe") return startStripe(freshCustomer);
+        if (method === "tabby") return startTabby(freshCustomer);
+        if (method === "tamara") return startTamara(freshCustomer);
+        placeCODOrder(freshCustomer);
+      },
+      // ✅ onInvalid — show a top-level message so user knows something is wrong
+      (errors) => {
+        console.log("[Checkout] Validation errors:", errors);
+        setError("Please fill in all required fields above.");
+      },
+    )();
   }
-
-  // ── New address / guest path ───────────────────────────────────
-  methods.handleSubmit((data) => {
-    if (!selectedRate) { setShippingError("Please select a shipping method"); return; }
-    if (!method) { setPaymentError("Please select a payment method"); return; }
-
-    // ✅ Build customer synchronously from form data — don't rely on setCustomer
-    const freshCustomer: CustomerInfo = {
-      ...customer,
-      name: `${data.firstName} ${data.lastName}`.trim(),
-      email: data.email,
-      phone: data.phone,
-      address: data.address1,
-      city: data.city,
-      countryCode: data.countryCode,
-      country: data.countryCode,
-    };
-
-    // Update state for other uses
-    setCustomer(freshCustomer);
-
-    // ✅ Pass freshCustomer directly instead of calling getOrderCustomer()
-    if (method === "stripe") return startStripe(freshCustomer);
-    if (method === "tabby") return startTabby(freshCustomer);
-    if (method === "tamara") return startTamara(freshCustomer);
-    placeCODOrder(freshCustomer);
-  })();
-}
   useEffect(() => {
     methods.clearErrors();
   }, [provinceRequired, zipRequired]);
+  const formValues = methods.watch();
 
   const shippingReady = hasAddresses
     ? Boolean(selectedAddressId) || useNewAddress
     : Boolean(
-        customer.address && customer.city && customer.phone && customer.name,
+        formValues.address1 &&
+        formValues.city &&
+        formValues.phone &&
+        formValues.firstName,
       );
 
   // ── Render ─────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ import { useFormContext } from "react-hook-form";
 import type { CustomerInfo, ShopifyAddress } from "@/types/checkout.types";
 import type { NewAddrForm } from "@/types/checkout.types";
 import { AddressForm } from "./address-form";
-
+import { useRef } from "react";
 type Props = {
   isLoggedIn: boolean;
   hasAddresses: boolean;
@@ -52,28 +52,22 @@ export function DeliverySection({
   const phone = watch("phone");
   const firstName = watch("firstName");
   const lastName = watch("lastName");
-
-  // Sync to customer whenever RHF values change (for shipping rates)
+  const onCustomerChangeRef = useRef(onCustomerChange);
+  onCustomerChangeRef.current = onCustomerChange;
+  const customerRef = useRef(customer);
+  customerRef.current = customer;
   useEffect(() => {
-  if (!showAddressForm) return;
-  onCustomerChange({
-    ...customer,
-    name: `${firstName} ${lastName}`.trim(),
-    address: address1,
-    city,
-    countryCode,
-    country: countryCode,
-    // ← phone intentionally excluded here
-  } as CustomerInfo);
-}, [
-  firstName,
-  lastName,
-  address1,
-  city,
-  countryCode,
-  showAddressForm,
-  // ← phone removed from deps
-  ]);
+    if (!showAddressForm) return;
+    // ✅ Use refs — no customer/onCustomerChange in deps, no re-render loop
+    onCustomerChangeRef.current({
+      ...customerRef.current,
+      name: `${firstName} ${lastName}`.trim(),
+      address: address1,
+      city,
+      countryCode,
+      country: countryCode,
+    } as CustomerInfo);
+  }, [firstName, lastName, address1, city, countryCode, showAddressForm]);
   async function handleSave() {
     const data = getValues();
     if (!data.firstName || !data.address1 || !data.city) {
