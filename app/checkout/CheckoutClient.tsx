@@ -247,114 +247,119 @@ export default function CheckoutClient({
     });
   }
 
-  async function startStripe() {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/stripe/create-checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          currency,
-          customer: getOrderCustomer(),
-          token: payload.token,
-          shipping: shippingCost,
-          shippingHandle: selectedRate?.handle,
-          discountCode: discountResult?.valid ? discountResult.code : undefined,
-          discountAmount: discountResult?.valid ? discountAmount : 0,
-          discountType: discountResult?.valid ? discountResult.type : null,
-          cancelUrl: window.location.href,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Stripe checkout failed");
-      window.location.href = data.url;
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-      setLoading(false);
-    }
+  async function startTabby(customerOverride?: CustomerInfo) {
+  setLoading(true);
+  setError("");
+  try {
+    const orderCustomer = customerOverride ?? getOrderCustomer();
+    const res = await fetch("/api/tabby/create-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items,
+        currency,
+        customer: orderCustomer,
+        token: payload.token,
+        cancelUrl: window.location.href,
+        shipping: shippingCost,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Tabby checkout failed");
+    window.location.href = data.url;
+  } catch (err: unknown) {
+    setError(err instanceof Error ? err.message : "Something went wrong");
+    setLoading(false);
   }
+}
 
-  async function placeCODOrder() {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/orders/cod", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          currency,
-          customer: getOrderCustomer(),
-          token: payload.token,
-          shipping: shippingCostAED,
-          codFee: codFeeAED,
-          shippingHandle: selectedRate?.handle,
-          discountCode: discountResult?.valid ? discountResult.code : undefined,
-          discountAmount: discountResult?.valid ? discountAmount : 0,
-          discountType: discountResult?.valid ? discountResult.type : null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Order failed");
-      setOrderId(data.orderId);
-      setStep("cod-success");
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
+async function startStripe(customerOverride?: CustomerInfo) {
+  setLoading(true);
+  setError("");
+  try {
+    const orderCustomer = customerOverride ?? getOrderCustomer();
+    const res = await fetch("/api/stripe/create-checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items,
+        currency,
+        customer: orderCustomer,
+        token: payload.token,
+        shipping: shippingCost,
+        shippingHandle: selectedRate?.handle,
+        discountCode: discountResult?.valid ? discountResult.code : undefined,
+        discountAmount: discountResult?.valid ? discountAmount : 0,
+        discountType: discountResult?.valid ? discountResult.type : null,
+        cancelUrl: window.location.href,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Stripe checkout failed");
+    window.location.href = data.url;
+  } catch (err: unknown) {
+    setError(err instanceof Error ? err.message : "Something went wrong");
+    setLoading(false);
   }
-  async function startTabby() {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/tabby/create-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          currency, // pass the actual store currency
-          customer: getOrderCustomer(), // includes countryCode
-          token: payload.token,
-          cancelUrl: window.location.href,
-          shipping: shippingCost, // pass shipping so Tabby total is accurate
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Tabby checkout failed");
-      window.location.href = data.url;
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-      setLoading(false);
-    }
-  }
+}
 
-  async function startTamara() {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/tamara/create-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          currency,
-          customer: getOrderCustomer(),
-          token: payload.token,
-          shipping: shippingCost,
-          cancelUrl: window.location.href,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Tamara checkout failed");
-      window.location.href = data.url;
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-      setLoading(false);
-    }
+async function startTamara(customerOverride?: CustomerInfo) {
+  setLoading(true);
+  setError("");
+  try {
+    const orderCustomer = customerOverride ?? getOrderCustomer();
+    const res = await fetch("/api/tamara/create-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items,
+        currency,
+        customer: orderCustomer,
+        token: payload.token,
+        shipping: shippingCost,
+        cancelUrl: window.location.href,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Tamara checkout failed");
+    window.location.href = data.url;
+  } catch (err: unknown) {
+    setError(err instanceof Error ? err.message : "Something went wrong");
+    setLoading(false);
   }
+}
+
+async function placeCODOrder(customerOverride?: CustomerInfo) {
+  setLoading(true);
+  setError("");
+  try {
+    const orderCustomer = customerOverride ?? getOrderCustomer();
+    const res = await fetch("/api/orders/cod", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items,
+        currency,
+        customer: orderCustomer,
+        token: payload.token,
+        shipping: shippingCostAED,
+        codFee: codFeeAED,
+        shippingHandle: selectedRate?.handle,
+        discountCode: discountResult?.valid ? discountResult.code : undefined,
+        discountAmount: discountResult?.valid ? discountAmount : 0,
+        discountType: discountResult?.valid ? discountResult.type : null,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Order failed");
+    setOrderId(data.orderId);
+    setStep("cod-success");
+  } catch (err: unknown) {
+    setError(err instanceof Error ? err.message : "Something went wrong");
+  } finally {
+    setLoading(false);
+  }
+}
 
   const isTabbySupported = isTabbyAvailable(grandTotal, currency);
 
@@ -385,43 +390,47 @@ export default function CheckoutClient({
   const [paymentError, setPaymentError] = useState("");
 
   function handlePayNow() {
-    if (!selectedRate) setShippingError("Please select a shipping method");
-    if (!method) setPaymentError("Please select a payment method");
+  if (!selectedRate) setShippingError("Please select a shipping method");
+  if (!method) setPaymentError("Please select a payment method");
 
-    const usingSavedAddress =
-      hasAddresses && !useNewAddress && selectedAddressId;
+  const usingSavedAddress = hasAddresses && !useNewAddress && selectedAddressId;
 
-    if (usingSavedAddress) {
-      // ── Saved address path — no RHF validation needed ──────────
-      if (!selectedRate || !method) return;
-      if (method === "stripe") return startStripe();
-      if (method === "tabby") return startTabby();
-      if (method === "tamara") return startTamara();
-      placeCODOrder();
-      return;
-    }
-
-    // ── New address path — validate via RHF ────────────────────
-    methods.handleSubmit((data) => {
-      if (!selectedRate || !method) return;
-
-      setCustomer((prev) => ({
-        ...prev,
-        name: `${data.firstName} ${data.lastName}`.trim(),
-        email: data.email,
-        phone: data.phone,
-        address: data.address1,
-        city: data.city,
-        countryCode: data.countryCode,
-        country: data.countryCode,
-      }));
-
-      if (method === "stripe") return startStripe();
-      if (method === "tabby") return startTabby();
-      if (method === "tamara") return startTamara();
-      placeCODOrder();
-    })();
+  if (usingSavedAddress) {
+    if (!selectedRate || !method) return;
+    if (method === "stripe") return startStripe();
+    if (method === "tabby") return startTabby();
+    if (method === "tamara") return startTamara();
+    placeCODOrder();
+    return;
   }
+
+  // ── New address / guest path ───────────────────────────────────
+  methods.handleSubmit((data) => {
+    if (!selectedRate) { setShippingError("Please select a shipping method"); return; }
+    if (!method) { setPaymentError("Please select a payment method"); return; }
+
+    // ✅ Build customer synchronously from form data — don't rely on setCustomer
+    const freshCustomer: CustomerInfo = {
+      ...customer,
+      name: `${data.firstName} ${data.lastName}`.trim(),
+      email: data.email,
+      phone: data.phone,
+      address: data.address1,
+      city: data.city,
+      countryCode: data.countryCode,
+      country: data.countryCode,
+    };
+
+    // Update state for other uses
+    setCustomer(freshCustomer);
+
+    // ✅ Pass freshCustomer directly instead of calling getOrderCustomer()
+    if (method === "stripe") return startStripe(freshCustomer);
+    if (method === "tabby") return startTabby(freshCustomer);
+    if (method === "tamara") return startTamara(freshCustomer);
+    placeCODOrder(freshCustomer);
+  })();
+}
   useEffect(() => {
     methods.clearErrors();
   }, [provinceRequired, zipRequired]);
