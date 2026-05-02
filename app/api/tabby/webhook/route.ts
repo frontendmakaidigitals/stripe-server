@@ -125,6 +125,35 @@ async function createShopifyOrder(
   return completed.name;
 }
 
+
+async function captureTabbyPayment(
+  paymentId: string,
+  amount: string,
+  currency: string,
+): Promise<void> {
+  // Use correct API base per currency
+  const apiBase = currency === "SAR" ? "https://api.tabby.sa" : "https://api.tabby.ai";
+  
+  const secretKey = currency === "SAR"
+    ? process.env.TABBY_SECRET_KEY_SAR
+    : currency === "KWD"
+    ? process.env.TABBY_SECRET_KEY_KWD
+    : process.env.TABBY_SECRET_KEY_AED;
+
+  const res = await fetch(`${apiBase}/api/v1/payments/${paymentId}/captures`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secretKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ amount }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Tabby capture failed: ${await res.text()}`);
+  }
+}
+
 // ── Webhook handler ────────────────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
   if (!verifyTabbySignature(request)) {
@@ -141,18 +170,28 @@ export async function POST(request: NextRequest) {
 
   console.log("[Tabby webhook] Received:", JSON.stringify(body, null, 2));
 
-  // ✅ Fix: status is lowercase and payment data is at top level
   const status = (body.status || "").toLowerCase();
-  if (status !== "closed") {
-    console.log("[Tabby webhook] Ignoring non-closed event:", body.status);
-    return NextResponse.json({ received: true });
-  }
-
-  // ✅ Fix: payment id is body.id, currency/amount are top-level
   const tabbyPaymentId = body.id;
   const currency = body.currency || "AED";
 
-  // ✅ Fix: token is in body.meta.token OR body.order.reference_id
+  // ✅ Auto-capture when authorized
+  if (status === "authorized") {
+    console.log("[Tabby webhook] Payment authorized, capturing...");
+    try {
+      await captureTabbyPayment(tabbyPaymentId, body.amount, currency);
+      console.log("[Tabby webhook] Capture triggered for:", tabbyPaymentId);
+    } catch (err) {
+      console.error("[Tabby webhook] Capture failed:", err);
+    }
+    return NextResponse.json({ received: true });
+  }
+
+  // Create Shopify order on closed
+  if (status !== "closed") {
+    console.log("[Tabby webhook] Ignoring event:", body.status);
+    return NextResponse.json({ received: true });
+  }
+
   const token = body.meta?.token || body.order?.reference_id;
   if (!token) {
     console.error("[Tabby webhook] No token/reference_id in payload");
@@ -173,7 +212,6 @@ export async function POST(request: NextRequest) {
     );
 
     await markTokenUsed(token);
-
     console.log(`[Tabby webhook] Order created: ${orderName} | Payment: ${tabbyPaymentId} | Currency: ${currency}`);
   } catch (err) {
     console.error("[Tabby webhook] Failed:", err);
