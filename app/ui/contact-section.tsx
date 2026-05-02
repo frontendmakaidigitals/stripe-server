@@ -1,5 +1,6 @@
 // components/ContactSection.tsx
 "use client";
+import { useFormContext } from "react-hook-form";
 
 import { CustomerInfo } from "@/types/checkout.types";
 
@@ -11,6 +12,7 @@ type Props = {
 };
 
 export function ContactSection({ customer, isLoggedIn, onChange }: Props) {
+    const { register } = useFormContext();
   if (isLoggedIn) {
     return (
       <div className="mb-5 flex items-center justify-between border-b border-gray-300 py-3">
@@ -39,8 +41,7 @@ export function ContactSection({ customer, isLoggedIn, onChange }: Props) {
         className="w-full border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm outline-none focus:border-[#1a1a1a] transition-colors"
         type="email"
         placeholder="Email"
-        value={customer.email}
-        onChange={(e) => onChange({ ...customer, email: e.target.value })}
+        {...register("email")}
       />
       <label className="flex items-center gap-2 mt-3 text-sm text-[#555] cursor-pointer">
         <input type="checkbox" className="w-4 h-4 rounded" />

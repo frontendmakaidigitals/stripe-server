@@ -172,6 +172,7 @@ export default function CheckoutClient({ payload }: CheckoutClientProps) {
       ...customer,
       phone:   formValues.phone || customer.phone,
       country: toCountryCode(customer.country || ""),
+      email:  formValues.email  || customer.email,  // ← add this
     };
 
     if (hasAddresses && !address.useNewAddress) {
