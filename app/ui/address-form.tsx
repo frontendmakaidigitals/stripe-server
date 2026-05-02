@@ -74,7 +74,7 @@ export function AddressForm({
     register,
     control,
     watch,
-    formState: { errors },
+    formState: { errors, isSubmitted },
   } = useFormContext();
   const [countryData, setCountryData] = useState<CountryData | null>(null);
   const [loadingCountry, setLoadingCountry] = useState(false);
@@ -292,7 +292,11 @@ export function AddressForm({
           name="phone"
           control={control}
           render={({ field, fieldState }) => (
-            <div>
+            <div
+              className={
+                fieldState.error ? "rounded-[6px] ring-1 ring-red-400" : ""
+              }
+            >
               <PhoneInput
                 placeholder={labels?.phone ?? "Phone"}
                 type="tel"
@@ -300,6 +304,11 @@ export function AddressForm({
                 onChange={field.onChange}
                 error={!!fieldState.error}
               />
+              {fieldState.error && (
+                <p className="text-xs text-red-500 mt-1">
+                  {fieldState.error.message}
+                </p>
+              )}
             </div>
           )}
         />

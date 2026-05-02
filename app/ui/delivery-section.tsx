@@ -49,7 +49,7 @@ export function DeliverySection({
   const countryCode = watch("countryCode");
   const city = watch("city");
   const address1 = watch("address1");
-  const phone = watch("phone");
+
   const firstName = watch("firstName");
   const lastName = watch("lastName");
   const onCustomerChangeRef = useRef(onCustomerChange);
@@ -58,7 +58,6 @@ export function DeliverySection({
   customerRef.current = customer;
   useEffect(() => {
     if (!showAddressForm) return;
-    // ✅ Use refs — no customer/onCustomerChange in deps, no re-render loop
     onCustomerChangeRef.current({
       ...customerRef.current,
       name: `${firstName} ${lastName}`.trim(),
@@ -66,6 +65,7 @@ export function DeliverySection({
       city,
       countryCode,
       country: countryCode,
+      // phone is implicitly included via ...customerRef.current
     } as CustomerInfo);
   }, [firstName, lastName, address1, city, countryCode, showAddressForm]);
   async function handleSave() {
