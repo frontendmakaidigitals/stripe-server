@@ -2,27 +2,31 @@
 
 export interface TabbyRegion {
   currency: string;
-  merchantCodeEnv: string; // env var name holding the merchant code
-  minAmount: number;       // Tabby minimum order amount in that currency
-  maxAmount: number;       // Tabby maximum order amount in that currency
+  merchantCodeEnv: string;
+  apiBase: string;           // ← add to interface
+  minAmount: number;
+  maxAmount: number;
 }
 
 export const TABBY_REGIONS: Record<string, TabbyRegion> = {
-    AE: {
+  AE: {
     currency: "AED",
-    merchantCodeEnv: "TABBY_MERCHANT_KEY_AED",   
+    merchantCodeEnv: "TABBY_MERCHANT_KEY_AED",
+    apiBase: "https://api.tabby.ai",   // ← add this
     minAmount: 1,
     maxAmount: 20000,
   },
   SA: {
     currency: "SAR",
-    merchantCodeEnv: "TABBY_MERCHANT_KEY_SAR",  
+    merchantCodeEnv: "TABBY_MERCHANT_KEY_SAR",
+    apiBase: "https://api.tabby.sa",   // ← Saudi uses different domain
     minAmount: 1,
     maxAmount: 20000,
   },
   KW: {
     currency: "KWD",
-    merchantCodeEnv: "TABBY_MERCHANT_KEY_KWD",   
+    merchantCodeEnv: "TABBY_MERCHANT_KEY_KWD",
+    apiBase: "https://api.tabby.ai",   // ← add this
     minAmount: 1,
     maxAmount: 20000,
   },

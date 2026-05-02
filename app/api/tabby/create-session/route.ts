@@ -136,12 +136,15 @@ export async function POST(request: NextRequest) {
       },
     };
     const apiKey =
-      region.currency === "AED" || region.currency === "SAR" // KSA uses AED key based on your screenshot
-        ? process.env.TABBY_PUBLIC_API_KEY_AED
-        : process.env.TABBY_PUBLIC_API_KEY_KWD;
+  region.currency === "AED"
+    ? process.env.TABBY_PUBLIC_API_KEY_AED
+    : region.currency === "SAR"
+    ? process.env.TABBY_PUBLIC_API_KEY_SAR
+    : process.env.TABBY_PUBLIC_API_KEY_KWD;
 
     // ── Call Tabby API ────────────────────────────────────────────
-    const res = await fetch("https://api.tabby.ai/api/v2/checkout", {
+    const res = await fetch(`${region.apiBase}/api/v2/checkout`, {
+
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,

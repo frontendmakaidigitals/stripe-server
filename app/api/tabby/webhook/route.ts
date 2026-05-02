@@ -5,20 +5,23 @@ import { markTokenUsed } from "@/app/lib/used-tokens";
 
 export const runtime = "nodejs";
 
-// ── Webhook signature verification ────────────────────────────────────────────
-// Tabby signs webhooks with the header value you set when registering the webhook.
-// Set TABBY_WEBHOOK_SIGNATURE in your env to that value.
 function verifyTabbySignature(request: NextRequest): boolean {
-  const secret = process.env.TABBY_WEBHOOK_SIGNATURE;
-  if (!secret) {
-    console.warn("[Tabby webhook] TABBY_WEBHOOK_SIGNATURE not set — skipping verification");
-    return true; // allow in dev if not configured; set it in production
-  }
-  const incoming = request.headers.get("x-webhook-signature") // header name you set
+  const incoming = request.headers.get("x-webhook-signature")
     ?? request.headers.get("x-tabby-signature");
-  return incoming === secret;
-}
 
+  const secrets = [
+    process.env.TABBY_WEBHOOK_SECRET_AED,
+    process.env.TABBY_WEBHOOK_SECRET_KWD,
+    process.env.TABBY_WEBHOOK_SECRET_SAR,
+  ].filter(Boolean);
+
+  if (!secrets.length) {
+    console.warn("[Tabby webhook] No webhook secrets set — skipping verification");
+    return true;
+  }
+
+  return secrets.some((s) => s === incoming);
+}
 // ── Shopify order creation ─────────────────────────────────────────────────────
 async function createShopifyOrder(
   items: CartItem[],
