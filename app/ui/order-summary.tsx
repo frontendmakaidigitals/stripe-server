@@ -1,45 +1,26 @@
 // components/OrderSummary.tsx
 "use client";
-
+import { useCheckoutContext } from "../checkout/checkoutContext";
 import { useState } from "react";
 import { fmt } from "../lib/checkout-utils";
-import type { PaymentMethod, DiscountResult } from "@/types//checkout.types";
-import type { checkoutItem } from "@/types/checkout.types";
-
-
-type Props = {
-  items: checkoutItem[];
-  currency: string;
-  total: number;
-  shippingCost: number;
-  codFee: number;
-  grandTotal: number;
-  method: PaymentMethod;
-  codAvailable: boolean;
-  ratesLoading: boolean;
-  selectedRate: { handle: string } | null;
-  discountResult: DiscountResult;
-  discountAmount: number;
-  onApplyDiscount: (code: string) => Promise<void>;
-};
+import type { ShippingRate } from "@/types/checkout.types";
 
 export function OrderSummary({
-  items,
-  currency,
-  total,
-  shippingCost,
-  codFee,
-  grandTotal,
-  method,
-  codAvailable,
-  ratesLoading,
   selectedRate,
-  discountResult,
-  discountAmount,
+  ratesLoading,
   onApplyDiscount,
-}: Props) {
+}: {
+  selectedRate: ShippingRate | null;
+  ratesLoading: boolean;
+  onApplyDiscount: (code: string) => Promise<void>;
+}) {
   const [discountCode, setDiscountCode] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const { currency, totals, method, discountResult, items, total } =
+    useCheckoutContext();
+
+  const { shippingCost, codFee, grandTotal, discountAmount } = totals;
 
   async function handleApply() {
     if (!discountCode.trim()) return;

@@ -1,15 +1,13 @@
-// components/ShippingMethodSection.tsx
 "use client";
 
 import { fmt } from "../lib/checkout-utils";
 import type { ShippingRate } from "@/types/checkout.types";
+import { useCheckoutContext } from "../checkout/checkoutContext";
 
 type Props = {
   rates: ShippingRate[];
   selectedRate: ShippingRate | null;
   loading: boolean;
-  currency: string;
-  aedToBase: number;
   onSelect?: (rate: ShippingRate) => void;
   error?: string;
 };
@@ -18,11 +16,11 @@ export function ShippingMethodSection({
   rates,
   selectedRate,
   loading,
-  currency,
-  aedToBase,
   onSelect,
-  error
+  error,
 }: Props) {
+  const { currency, aedToBase } = useCheckoutContext();
+
   return (
     <section className="mb-8 border-t border-b border-gray-300 py-4">
       <p className="text-neutral-600 text-sm mb-3">Shipping method</p>
@@ -73,6 +71,8 @@ export function ShippingMethodSection({
           })}
         </div>
       )}
+
+      {error && <p className="mt-2 text-sm text-[#dc2626]">{error}</p>}
     </section>
   );
 }

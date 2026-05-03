@@ -1,7 +1,7 @@
 // components/ContactSection.tsx
 "use client";
 import { useFormContext } from "react-hook-form";
-
+import { useCheckoutContext } from "../checkout/checkoutContext";
 import { CustomerInfo } from "@/types/checkout.types";
 
 type Props = {
@@ -11,8 +11,10 @@ type Props = {
   errors?: Record<string, string>;
 };
 
-export function ContactSection({ customer, isLoggedIn, onChange }: Props) {
-    const { register } = useFormContext();
+export function ContactSection({ isLoggedIn }: { isLoggedIn: boolean }) {
+  const { customer } = useCheckoutContext();
+  const { register } = useFormContext();
+
   if (isLoggedIn) {
     return (
       <div className="mb-5 flex items-center justify-between border-b border-gray-300 py-3">
