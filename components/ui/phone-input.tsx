@@ -22,6 +22,21 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
+// ── Stable references via context so component props never recreate ──────────
+const PhoneErrorContext = React.createContext(false);
+
+const CountrySelectWithError = (props: any) => {
+  const error = React.useContext(PhoneErrorContext);
+  return <CountrySelect {...props} error={error} />;
+};
+
+const InputWithError = (props: any) => {
+  const error = React.useContext(PhoneErrorContext);
+  return <InputComponent {...props} error={error} />;
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+
 type PhoneInputProps = Omit<
   React.ComponentProps<"input">,
   "onChange" | "value" | "ref"
@@ -31,28 +46,27 @@ type PhoneInputProps = Omit<
     error?: boolean;
   };
 
-const PhoneInput = React.forwardRef<
-  React.ElementRef<typeof RPNInput.default>,
-  PhoneInputProps
->(({ className, onChange, value, error, ...props }, ref) => {
-  return (
-    <RPNInput.default
-      ref={ref}
-      className={cn("flex", className)}
-      flagComponent={FlagComponent}
-      countrySelectComponent={(countryProps) => (
-        <CountrySelect {...countryProps} error={error} />
-      )}
-      inputComponent={(inputProps) => (
-        <InputComponent {...inputProps} error={error} />
-      )}
-      smartCaret={false}
-      value={value || undefined}
-      onChange={(value) => onChange?.(value || ("" as RPNInput.Value))}
-      {...props}
-    />
-  );
-});
+type PhoneInputRef = React.ElementRef<typeof RPNInput.default>;
+
+const PhoneInput = React.forwardRef<PhoneInputRef, PhoneInputProps>(
+  ({ className, onChange, value, error, ...props }, ref) => {
+    return (
+      <PhoneErrorContext.Provider value={error ?? false}>
+        <RPNInput.default
+          ref={ref}
+          className={cn("flex", className)}
+          flagComponent={FlagComponent}
+          countrySelectComponent={CountrySelectWithError}
+          inputComponent={InputWithError}
+          smartCaret={false}
+          value={value || undefined}
+          onChange={(value) => onChange?.(value || ("" as RPNInput.Value))}
+          {...props}
+        />
+      </PhoneErrorContext.Provider>
+    );
+  },
+);
 PhoneInput.displayName = "PhoneInput";
 
 /* ---------------- INPUT ---------------- */
@@ -68,7 +82,7 @@ const InputComponent = React.forwardRef<HTMLInputElement, InputComponentProps>(
         ref={ref}
         className={cn(
           "rounded-e-sm border bg-transparent! border-gray-300 h-12 rounded-s-none",
-          error && "border-red-400 bg-red-100! ",
+          error && "border-red-400 bg-red-100!",
           className,
         )}
         {...props}
