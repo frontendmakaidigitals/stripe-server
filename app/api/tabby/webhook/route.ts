@@ -17,16 +17,15 @@ function verifyTabbySignature(request: NextRequest): boolean {
     request.headers.get("x-webhook-signature") ??
     request.headers.get("x-tabby-signature");
 
+  console.log("[Tabby webhook] Incoming:", incoming);
+  console.log("[Tabby webhook] AED secret:", process.env.TABBY_WEBHOOK_SECRET_AED);
+  console.log("[Tabby webhook] Match:", incoming === process.env.TABBY_WEBHOOK_SECRET_AED);
+
   const secrets = [
     process.env.TABBY_WEBHOOK_SECRET_AED,
     process.env.TABBY_WEBHOOK_SECRET_KWD,
     process.env.TABBY_WEBHOOK_SECRET_SAR,
   ].filter(Boolean);
-
-  if (!secrets.length) {
-    console.warn("[Tabby webhook] No webhook secrets set — skipping verification");
-    return true;
-  }
 
   return secrets.some((s) => s === incoming);
 }
@@ -203,6 +202,8 @@ async function createShopifyOrder(
 
 // ── Webhook handler ────────────────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
+    console.log("[Tabby webhook] HIT — headers:", Object.fromEntries(request.headers));
+
   if (!verifyTabbySignature(request)) {
     console.warn("[Tabby webhook] Invalid signature — rejecting");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -291,6 +292,7 @@ console.log("[Tabby webhook] Captures:", JSON.stringify(body.captures));
 console.log("[Tabby webhook] closed_at:", body.closed_at);
 console.log("[Tabby webhook] meta:", JSON.stringify(body.meta));
 console.log("[Tabby webhook] order:", JSON.stringify(body.order));
+
 
     if (jwtToken) await markTokenUsed(jwtToken);
     if (referenceId) await redis.del(`tabby_checkout:${referenceId}`);

@@ -65,6 +65,8 @@ export async function POST(request: NextRequest) {
     }
 
     const merchantCode = getMerchantCode(region);
+    console.log("[Tabby] Merchant code env value:", process.env.TABBY_MERCHANT_KEY_AED);
+    console.log("[Tabby] Merchant code used:", merchantCode);
     
     if (!merchantCode) {
       console.error(`[Tabby] Missing merchant code for region: ${countryCode}`);
@@ -166,7 +168,7 @@ export async function POST(request: NextRequest) {
 
    if (!res.ok) {
   const errorText = await res.text();
-  console.error("[Tabby] Session creation failed:", res.status, res.statusText, errorText);
+console.error("[Tabby] Session creation failed:", res.status, res.statusText, errorText);
   return NextResponse.json(
     { error: "Tabby session failed", detail: errorText },
     { status: 502, headers: CORS_HEADERS }
