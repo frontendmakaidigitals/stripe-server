@@ -285,7 +285,12 @@ export async function POST(request: NextRequest) {
       checkoutPayload.shipping ?? 0,
       checkoutPayload.discountAmount ?? 0,
       checkoutPayload.discountCode,
-    );
+    );console.log("[Tabby webhook] Payment ID:", body.id);
+console.log("[Tabby webhook] Status:", body.status);
+console.log("[Tabby webhook] Captures:", JSON.stringify(body.captures));
+console.log("[Tabby webhook] closed_at:", body.closed_at);
+console.log("[Tabby webhook] meta:", JSON.stringify(body.meta));
+console.log("[Tabby webhook] order:", JSON.stringify(body.order));
 
     if (jwtToken) await markTokenUsed(jwtToken);
     if (referenceId) await redis.del(`tabby_checkout:${referenceId}`);
