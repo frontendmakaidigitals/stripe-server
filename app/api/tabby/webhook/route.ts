@@ -36,7 +36,6 @@ async function resolveCheckoutPayload(
   jwtToken: string | undefined,
   referenceId: string | undefined,
 ) {
-  // 1. Try JWT token first
   if (jwtToken) {
     try {
       const payload = await verifyCheckoutToken(jwtToken);
@@ -47,7 +46,6 @@ async function resolveCheckoutPayload(
     }
   }
 
-  // 2. Fall back to Redis by referenceId
   if (referenceId) {
     const raw = await redis.get(`tabby_checkout:${referenceId}`);
     if (raw) {
@@ -69,16 +67,14 @@ async function captureTabbyPayment(
   amount: string,
   currency: string,
 ): Promise<void> {
-  // Always use api.tabby.ai for test mode
-  // api.tabby.sa is only for live SAR production
   const apiBase = "https://api.tabby.ai";
 
   const secretKey =
     currency === "SAR"
       ? process.env.TABBY_SECRET_KEY_SAR
       : currency === "KWD"
-      ? process.env.TABBY_SECRET_KEY_KWD
-      : process.env.TABBY_SECRET_KEY_AED;
+        ? process.env.TABBY_SECRET_KEY_KWD
+        : process.env.TABBY_SECRET_KEY_AED;
 
   console.log("[Tabby webhook] Capturing with key prefix:", secretKey?.slice(0, 12));
 
@@ -224,11 +220,10 @@ export async function POST(request: NextRequest) {
   const tabbyPaymentId: string = body.id;
   const currency: string = body.currency || "AED";
   const status = (body.status || "").toLowerCase();
-  const hasCaptured =
-    Array.isArray(body.captures) && body.captures.length > 0;
+  const hasCaptured = Array.isArray(body.captures) && body.captures.length > 0;
   const isClosed = status === "closed" || body.closed_at !== null;
 
-  // ── Step 1: If authorized and not yet captured → capture it ───
+  // ── Step 1: If authorized and not yet captured → capture it ───────────────
   if (status === "authorized" && !hasCaptured) {
     console.log("[Tabby webhook] Authorized, triggering capture...");
     try {
@@ -240,22 +235,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true });
   }
 
-  // ── Step 2: If captured/closed → create Shopify order ─────────
+  // ── Step 2: Only proceed to order creation if captured or closed ──────────
   if (!hasCaptured && !isClosed) {
     console.log("[Tabby webhook] Not captured yet, ignoring. Status:", status);
     return NextResponse.json({ received: true });
   }
 
-  // ── Idempotency check ──────────────────────────────────────────
+  // ── Atomic idempotency check via SET NX ───────────────────────────────────
   const idempotencyKey = `tabby_processed:${tabbyPaymentId}`;
   try {
-    const alreadyDone = await redis.get(idempotencyKey);
-    if (alreadyDone) {
+    const wasSet = await redis.set(idempotencyKey, "1", {
+      ex: 60 * 60 * 24 * 7,
+      nx: true, // only sets if key doesn't exist — atomic, no race condition
+    });
+
+    if (wasSet === null) {
+      // null means key already existed — already processed
       console.log("[Tabby webhook] Already processed:", tabbyPaymentId);
       return NextResponse.json({ received: true });
     }
   } catch (err) {
-    console.warn("[Tabby webhook] Idempotency check failed:", err);
+    // Don't proceed — better to make Tabby retry than create a duplicate order
+    console.error("[Tabby webhook] Idempotency Redis error — aborting:", err);
+    return NextResponse.json({ error: "Redis error" }, { status: 500 });
   }
 
   const referenceId: string | undefined = body.order?.reference_id;
@@ -285,20 +287,20 @@ export async function POST(request: NextRequest) {
       checkoutPayload.discountCode,
     );
 
-    // Mark processed
-    await redis.set(idempotencyKey, "1", { ex: 60 * 60 * 24 * 7 });
-
-    // Mark JWT token used
     if (jwtToken) await markTokenUsed(jwtToken);
-
-    // Clean up Redis checkout payload
     if (referenceId) await redis.del(`tabby_checkout:${referenceId}`);
 
     console.log(
       `[Tabby webhook] ✅ Order created: ${orderName} | Payment: ${tabbyPaymentId} | Currency: ${currency}`,
     );
   } catch (err) {
-    console.error("[Tabby webhook] Failed:", err);
+    // Order creation failed — delete idempotency key so Tabby can retry
+    await redis.del(idempotencyKey);
+    console.error(
+      "[Tabby webhook] Order creation failed, idempotency key cleared for retry:",
+      err,
+    );
+    return NextResponse.json({ error: "Order creation failed" }, { status: 500 });
   }
 
   return NextResponse.json({ received: true });
