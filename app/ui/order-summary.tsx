@@ -5,6 +5,8 @@ import { useState } from "react";
 import { fmt } from "../lib/checkout-utils";
 import type { ShippingRate } from "@/types/checkout.types";
 
+const VAT_RATE = 0.05;
+
 export function OrderSummary({
   selectedRate,
   ratesLoading,
@@ -21,7 +23,15 @@ export function OrderSummary({
     useCheckoutContext();
 
   const { shippingCost, codFee, grandTotal, discountAmount } = totals;
+  const isAED = currency === "AED";
+  const subtotalExclVAT = isAED
+    ? Math.round((total / (1 + VAT_RATE)) * 100) / 100
+    : total;
+  const vatAmount = isAED
+    ? Math.round(((total * VAT_RATE) / (1 + VAT_RATE)) * 100) / 100
+    : 0;
 
+  const finalTotal = grandTotal;
   async function handleApply() {
     if (!discountCode.trim()) return;
     setLoading(true);
@@ -108,7 +118,7 @@ export function OrderSummary({
           <div className="flex justify-between text-sm text-[#555]">
             <span>Subtotal</span>
             <span className="font-medium text-[#1a1a1a]">
-              {fmt(total, currency)}
+              {fmt(subtotalExclVAT, currency)}
             </span>
           </div>
 
@@ -138,11 +148,18 @@ export function OrderSummary({
                     : fmt(shippingCost, currency)}
             </span>
           </div>
-
+          {isAED && (
+            <div className="flex justify-between text-sm text-[#555]">
+              <span>VAT (5% included)</span>
+              <span className="font-medium text-[#1a1a1a]">
+                {fmt(vatAmount, currency)}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between items-baseline border-t border-[#e0e0e0] pt-4 mt-1">
             <span className="text-base font-semibold">Total</span>
             <span className="text-2xl font-bold">
-              {fmt(grandTotal, currency)}
+              {fmt(finalTotal, currency)}
             </span>
           </div>
         </div>
