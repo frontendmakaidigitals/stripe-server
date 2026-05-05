@@ -74,6 +74,8 @@ jobs:
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='.env' \
+            --no-times \
+            --no-perms \
             ./ ${{ secrets.CLOUDWAYS_USER }}@${{ secrets.CLOUDWAYS_HOST }}:${{ secrets.CLOUDWAYS_PATH }}/
 
       - name: Install & Restart on server
