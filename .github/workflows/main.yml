@@ -78,13 +78,12 @@ jobs:
             --no-perms \
             ./ ${{ secrets.CLOUDWAYS_USER }}@${{ secrets.CLOUDWAYS_HOST }}:${{ secrets.CLOUDWAYS_PATH }}/
 
-      - name: Copy files to server
+      - name: Install & Restart on server
         run: |
-          rsync -avz --delete \
-            -e "ssh -i ~/.ssh/id_ed25519 -p 22 -o StrictHostKeyChecking=no" \
-            --exclude='.git' \
-            --exclude='node_modules' \
-            --exclude='.env' \
-            --no-times \
-            --no-perms \
-            ./ ${{ secrets.CLOUDWAYS_USER }}@${{ secrets.CLOUDWAYS_HOST }}:${{ secrets.CLOUDWAYS_PATH }}/
+          ssh -i ~/.ssh/id_ed25519 -p 22 -o StrictHostKeyChecking=no \
+          ${{ secrets.CLOUDWAYS_USER }}@${{ secrets.CLOUDWAYS_HOST }} << 'EOF'
+            cd ${{ secrets.CLOUDWAYS_PATH }}
+            npm ci --production
+            /home/master/.npm-global/node_modules/pm2/bin/pm2 restart nextapp || /home/master/.npm-global/node_modules/pm2/bin/pm2 start npm --name nextapp -- start
+            /home/master/.npm-global/node_modules/pm2/bin/pm2 save
+          EOF
