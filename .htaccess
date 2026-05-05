@@ -1,4 +1,10 @@
 DirectoryIndex disabled
 RewriteEngine On
 RewriteBase /
+
+# Serve Next.js static files directly
+RewriteCond %{REQUEST_URI} ^/_next/static/
+RewriteRule ^_next/static/(.*)$ .next/static/$1 [L]
+
+# Proxy everything else to Next.js app
 RewriteRule ^(.*)?$ http://127.0.0.1:3000/$1 [P,L]
