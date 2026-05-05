@@ -50,8 +50,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Clear Next.js cache
+        run: rm -rf .next
+
       - name: Build
         run: npm run build
+
+      - name: Check build CSS
+        run: ls .next/static/chunks/*.css
 
       - name: Setup SSH
         run: |
@@ -84,7 +90,8 @@ jobs:
           ${{ secrets.CLOUDWAYS_USER }}@${{ secrets.CLOUDWAYS_HOST }} << 'EOF'
             cd ${{ secrets.CLOUDWAYS_PATH }}
             npm ci --production
-            cp -r .next/static .next/standalone/.next/static
+            rm -rf .next/standalone/.next/static
+            cp -r .next/static .next/standalone/.next/
             cp -r public .next/standalone/public
             /home/master/.npm-global/node_modules/pm2/bin/pm2 restart nextapp || /home/master/.npm-global/node_modules/pm2/bin/pm2 start .next/standalone/server.js --name nextapp
             /home/master/.npm-global/node_modules/pm2/bin/pm2 save
