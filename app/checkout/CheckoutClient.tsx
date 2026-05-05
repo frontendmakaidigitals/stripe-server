@@ -220,8 +220,10 @@ export default function CheckoutClient({
         formValues.firstName,
       );
 
-  const isTabbySupported = isTabbyAvailable(totals.grandTotal, currency);
 
+  const isTabbySupported = isTabbyAvailable(totals.grandTotal, currency);
+  const TAMARA_CURRENCIES = ["AED", "KWD", "SAR"];
+  const isTamaraSupported = TAMARA_CURRENCIES.includes(currency.toUpperCase());
   // ── Context value ─────────────────────────────────────────────────────────
   const contextValue = {
     customer,
@@ -291,6 +293,7 @@ export default function CheckoutClient({
                       <PaymentSection
                         error={paymentError}
                         isTabbyAvailable={isTabbySupported}
+                        isTamaraAvailable={isTamaraSupported}
                         onChange={(m) => {
                           setMethod(m);
                           setPaymentError("");

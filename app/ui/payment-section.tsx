@@ -7,9 +7,15 @@ type Props = {
   error?: string;
   isTabbyAvailable: boolean;
   onChange: (m: PaymentMethod) => void;
+  isTamaraAvailable: boolean; // Add this
 };
 
-export function PaymentSection({ error, isTabbyAvailable, onChange }: Props) {
+export function PaymentSection({
+  error,
+  isTabbyAvailable,
+  onChange,
+  isTamaraAvailable,
+}: Props) {
   const { method, totals } = useCheckoutContext();
   const { codAvailable } = totals;
 
@@ -70,25 +76,30 @@ export function PaymentSection({ error, isTabbyAvailable, onChange }: Props) {
           </label>
         )}
 
+        {isTamaraAvailable && (
+          <label
+            className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${
+              method === "tamara"
+                ? "bg-[#f5f5f5]"
+                : "bg-white hover:bg-[#fafafa]"
+            }`}
+          >
+            <input
+              type="radio"
+              name="payment"
+              value="tamara"
+              checked={method === "tamara"}
+              onChange={() => onChange("tamara")}
+              className="w-4 h-4 accent-[#1a1a1a]"
+            />
+            <span className="text-sm font-medium flex-1">
+              Split in 3 — No interest
+            </span>
+            <Image src="/tamara.png" alt="Tamara" width={72} height={24} />
+          </label>
+        )}
+
         {/* Tamara */}
-        <label
-          className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${
-            method === "tamara" ? "bg-[#f5f5f5]" : "bg-white hover:bg-[#fafafa]"
-          }`}
-        >
-          <input
-            type="radio"
-            name="payment"
-            value="tamara"
-            checked={method === "tamara"}
-            onChange={() => onChange("tamara")}
-            className="w-4 h-4 accent-[#1a1a1a]"
-          />
-          <span className="text-sm font-medium flex-1">
-            Split in 3 — No interest
-          </span>
-          <Image src="/tamara.png" alt="Tamara" width={72} height={24} />
-        </label>
 
         {/* COD */}
         {codAvailable && (
