@@ -29,7 +29,7 @@ export async function signCheckoutToken(
   payload: CheckoutPayload,
   expiresInSeconds = 900, // 15 minutes
 ): Promise<string> {
-  const secret = process.env.CHECKOUT_TOKEN_SECRET;
+  const secret = 'OpnL5prJw5Asbxhv6gt9sxAqh3wW4ldaNcObHoHERTI5dFHXfrI3Gt6kV4KCfWGKvzuSXGcIqpI9RNBvBBESF2';
   if (!secret) throw new Error("CHECKOUT_TOKEN_SECRET env var is not set");
 
   const header = base64url(
@@ -61,7 +61,7 @@ export async function signCheckoutToken(
 export async function verifyCheckoutToken(
   token: string,
 ): Promise<CheckoutPayload> {
-  const secret = process.env.CHECKOUT_TOKEN_SECRET;
+  const secret = 'OpnL5prJw5Asbxhv6gt9sxAqh3wW4ldaNcObHoHERTI5dFHXfrI3Gt6kV4KCfWGKvzuSXGcIqpI9RNBvBBESF2';
   if (!secret) throw new Error("CHECKOUT_TOKEN_SECRET env var is not set");
 
   const parts = token.split(".");
