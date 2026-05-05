@@ -83,7 +83,8 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 -p 22 -o StrictHostKeyChecking=no \
           ${{ secrets.CLOUDWAYS_USER }}@${{ secrets.CLOUDWAYS_HOST }} << 'EOF'
             cd ${{ secrets.CLOUDWAYS_PATH }}
-            npm ci --production
-            /home/master/.npm-global/node_modules/pm2/bin/pm2 restart nextapp || /home/master/.npm-global/node_modules/pm2/bin/pm2 start npm --name nextapp -- start
+            /home/master/.npm-global/node_modules/pm2/bin/pm2 stop nextapp || true
+            /home/master/.npm-global/node_modules/pm2/bin/pm2 delete nextapp || true
+            /home/master/.npm-global/node_modules/pm2/bin/pm2 start .next/standalone/server.js --name nextapp
             /home/master/.npm-global/node_modules/pm2/bin/pm2 save
           EOF
