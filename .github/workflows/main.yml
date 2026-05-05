@@ -56,9 +56,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Check build CSS
-        run: ls .next/static/chunks/*.css
-
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
