@@ -54,8 +54,6 @@ jobs:
         run: npm run build
 
       - name: Setup SSH
-        env:
-          SSH_KEY: ${{ secrets.CLOUDWAYS_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
           python3 -c "
@@ -65,13 +63,14 @@ jobs:
               f.write(key + '\n')
           "
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keygen -l -f ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ secrets.CLOUDWAYS_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -p 3022 -H ${{ secrets.CLOUDWAYS_HOST }} >> ~/.ssh/known_hosts
+        env:
+          SSH_KEY: ${{ secrets.CLOUDWAYS_SSH_KEY }}
 
       - name: Copy files to server
         run: |
           rsync -avz --delete \
-            -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+            -e "ssh -i ~/.ssh/id_ed25519 -p 3022 -o StrictHostKeyChecking=no" \
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='.env' \
@@ -79,7 +78,7 @@ jobs:
 
       - name: Install & Restart on server
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no \
+          ssh -i ~/.ssh/id_ed25519 -p 3022 -o StrictHostKeyChecking=no \
           ${{ secrets.CLOUDWAYS_USER }}@${{ secrets.CLOUDWAYS_HOST }} << 'EOF'
             cd ${{ secrets.CLOUDWAYS_PATH }}
             npm ci --production
