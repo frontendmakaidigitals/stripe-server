@@ -54,14 +54,19 @@ jobs:
         run: npm run build
 
       - name: Setup SSH
+        env:
+          SSH_KEY: ${{ secrets.CLOUDWAYS_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          cat << 'SSHKEY' > ~/.ssh/id_ed25519
-          ${{ secrets.CLOUDWAYS_SSH_KEY }}
-          SSHKEY
+          python3 -c "
+          import os
+          key = os.environ['SSH_KEY']
+          with open(os.path.expanduser('~/.ssh/id_ed25519'), 'w') as f:
+              f.write(key + '\n')
+          "
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ secrets.CLOUDWAYS_HOST }} >> ~/.ssh/known_hosts
           ssh-keygen -l -f ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.CLOUDWAYS_HOST }} >> ~/.ssh/known_hosts
 
       - name: Copy files to server
         run: |
