@@ -59,7 +59,6 @@ jobs:
           echo "${{ secrets.CLOUDWAYS_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.CLOUDWAYS_HOST }} >> ~/.ssh/known_hosts
-          ssh-add ~/.ssh/id_ed25519
 
       - name: Copy files to server
         run: |
