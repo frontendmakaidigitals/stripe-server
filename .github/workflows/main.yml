@@ -47,6 +47,7 @@ jobs:
             echo "TABBY_MERCHANT_KEY_SAR=${{ secrets.TABBY_MERCHANT_KEY_SAR }}"
             echo "TABBY_WEBHOOK_SECRET_SAR=${{ secrets.TABBY_WEBHOOK_SECRET_SAR }}"
           } > .env
+          cp .env .env.production
 
       - name: Install dependencies
         run: npm ci
@@ -77,8 +78,6 @@ jobs:
             -e "ssh -i ~/.ssh/id_ed25519 -p 22 -o StrictHostKeyChecking=no" \
             --exclude='.git' \
             --exclude='node_modules' \
-            --exclude='.env' \
-            --exclude='.env.production' \
             --no-times \
             --no-perms \
             ./ ${{ secrets.CLOUDWAYS_USER }}@${{ secrets.CLOUDWAYS_HOST }}:${{ secrets.CLOUDWAYS_PATH }}/
@@ -92,6 +91,7 @@ jobs:
             rm -rf .next/standalone/.next/static
             cp -r .next/static .next/standalone/.next/
             cp -r public .next/standalone/public
-            /home/master/.npm-global/node_modules/pm2/bin/pm2 restart nextapp || /home/master/.npm-global/node_modules/pm2/bin/pm2 start .next/standalone/server.js --name nextapp
+            /home/master/.npm-global/node_modules/pm2/bin/pm2 restart nextapp --update-env || \
+            /home/master/.npm-global/node_modules/pm2/bin/pm2 start .next/standalone/server.js --name nextapp
             /home/master/.npm-global/node_modules/pm2/bin/pm2 save
           EOF
