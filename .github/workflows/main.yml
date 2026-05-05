@@ -78,6 +78,7 @@ jobs:
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='.env' \
+            --exclude='.env.production' \
             --no-times \
             --no-perms \
             ./ ${{ secrets.CLOUDWAYS_USER }}@${{ secrets.CLOUDWAYS_HOST }}:${{ secrets.CLOUDWAYS_PATH }}/
