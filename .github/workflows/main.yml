@@ -1,0 +1,78 @@
+name: Deploy to Cloudways
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Create .env file
+        run: |
+          cat << EOF > .env
+          STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+          SHOPIFY_API_KEY=${{ secrets.SHOPIFY_API_KEY }}
+          SHOPIFY_API_SECRET=${{ secrets.SHOPIFY_API_SECRET }}
+          NEXT_PUBLIC_URL=${{ secrets.NEXT_PUBLIC_URL }}
+          SHOPIFY_ACCESS_TOKEN=${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          NEXT_PUBLIC_SHOPIFY_DOMAIN=${{ secrets.NEXT_PUBLIC_SHOPIFY_DOMAIN }}
+          UPSTASH_REDIS_REST_URL=${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN=${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          SHOPIFY_STOREFRONT_TOKEN=${{ secrets.SHOPIFY_STOREFRONT_TOKEN }}
+          TABBY_PUBLIC_API_KEY_AED=${{ secrets.TABBY_PUBLIC_API_KEY_AED }}
+          TABBY_SECRET_KEY_AED=${{ secrets.TABBY_SECRET_KEY_AED }}
+          TABBY_MERCHANT_KEY_AED=${{ secrets.TABBY_MERCHANT_KEY_AED }}
+          TABBY_WEBHOOK_SECRET_AED=${{ secrets.TABBY_WEBHOOK_SECRET_AED }}
+          TABBY_PUBLIC_API_KEY_KWD=${{ secrets.TABBY_PUBLIC_API_KEY_KWD }}
+          TABBY_SECRET_KEY_KWD=${{ secrets.TABBY_SECRET_KEY_KWD }}
+          TABBY_MERCHANT_KEY_KWD=${{ secrets.TABBY_MERCHANT_KEY_KWD }}
+          TABBY_WEBHOOK_SECRET_KWD=${{ secrets.TABBY_WEBHOOK_SECRET_KWD }}
+          TABBY_PUBLIC_API_KEY_SAR=${{ secrets.TABBY_PUBLIC_API_KEY_SAR }}
+          TABBY_SECRET_KEY_SAR=${{ secrets.TABBY_SECRET_KEY_SAR }}
+          TABBY_MERCHANT_KEY_SAR=${{ secrets.TABBY_MERCHANT_KEY_SAR }}
+          TABBY_WEBHOOK_SECRET_SAR=${{ secrets.TABBY_WEBHOOK_SECRET_SAR }}
+          EOF
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.CLOUDWAYS_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.CLOUDWAYS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Copy files to server
+        run: |
+          rsync -avz --delete \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.env' \
+            ./ ${{ secrets.CLOUDWAYS_USER }}@${{ secrets.CLOUDWAYS_HOST }}:${{ secrets.CLOUDWAYS_PATH }}/
+
+      - name: Install & Restart on server
+        run: |
+          ssh ${{ secrets.CLOUDWAYS_USER }}@${{ secrets.CLOUDWAYS_HOST }} << 'EOF'
+            cd ${{ secrets.CLOUDWAYS_PATH }}
+            npm ci --production
+            /home/master/.npm-global/node_modules/pm2/bin/pm2 restart nextapp || /home/master/.npm-global/node_modules/pm2/bin/pm2 start npm --name nextapp -- start
+            /home/master/.npm-global/node_modules/pm2/bin/pm2 save
+          EOF
