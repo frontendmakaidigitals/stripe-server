@@ -22,16 +22,16 @@ jobs:
       - name: Create .env file
         run: |
           {
+            echo "NEXT_PUBLIC_SHOPIFY_DOMAIN=${{ vars.NEXT_PUBLIC_SHOPIFY_DOMAIN }}"
+            echo "NEXT_PUBLIC_URL=${{ vars.NEXT_PUBLIC_URL }}"
+            echo "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ vars.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}"
+            echo "UPSTASH_REDIS_REST_URL=${{ vars.UPSTASH_REDIS_REST_URL }}"
             echo "CHECKOUT_TOKEN_SECRET=${{ secrets.CHECKOUT_TOKEN_SECRET }}"
             echo "STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}"
             echo "STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}"
-            echo "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}"
             echo "SHOPIFY_API_KEY=${{ secrets.SHOPIFY_API_KEY }}"
             echo "SHOPIFY_API_SECRET=${{ secrets.SHOPIFY_API_SECRET }}"
-            echo "NEXT_PUBLIC_URL=${{ secrets.NEXT_PUBLIC_URL }}"
             echo "SHOPIFY_ACCESS_TOKEN=${{ secrets.SHOPIFY_ACCESS_TOKEN }}"
-            echo "NEXT_PUBLIC_SHOPIFY_DOMAIN=${{ secrets.NEXT_PUBLIC_SHOPIFY_DOMAIN }}"
-            echo "UPSTASH_REDIS_REST_URL=${{ secrets.UPSTASH_REDIS_REST_URL }}"
             echo "UPSTASH_REDIS_REST_TOKEN=${{ secrets.UPSTASH_REDIS_REST_TOKEN }}"
             echo "SHOPIFY_STOREFRONT_TOKEN=${{ secrets.SHOPIFY_STOREFRONT_TOKEN }}"
             echo "TABBY_PUBLIC_API_KEY_AED=${{ secrets.TABBY_PUBLIC_API_KEY_AED }}"
@@ -91,7 +91,29 @@ jobs:
             rm -rf .next/standalone/.next/static
             cp -r .next/static .next/standalone/.next/
             cp -r public .next/standalone/public
-            /home/master/.npm-global/node_modules/pm2/bin/pm2 restart nextapp --update-env || \
-            /home/master/.npm-global/node_modules/pm2/bin/pm2 start .next/standalone/server.js --name nextapp
+            node -e "
+            const fs = require('fs');
+            const vars = {};
+            fs.readFileSync('.env', 'utf8').split('\n').forEach(line => {
+              const idx = line.indexOf('=');
+              if (idx > 0) {
+                const key = line.slice(0, idx).trim();
+                const val = line.slice(idx + 1).trim();
+                if (key) vars[key] = val;
+              }
+            });
+            const config = \`module.exports = {
+              apps: [{
+                name: 'nextapp',
+                script: '.next/standalone/server.js',
+                cwd: process.cwd(),
+                env: \${JSON.stringify({NODE_ENV: 'production', PORT: 3000, ...vars}, null, 2)},
+              }],
+            };\`;
+            fs.writeFileSync('ecosystem.config.js', config);
+            console.log('ecosystem.config.js written with', Object.keys(vars).length, 'vars');
+            "
+            /home/master/.npm-global/node_modules/pm2/bin/pm2 restart ecosystem.config.js --update-env || \
+            /home/master/.npm-global/node_modules/pm2/bin/pm2 start ecosystem.config.js
             /home/master/.npm-global/node_modules/pm2/bin/pm2 save
           EOF
