@@ -84,6 +84,8 @@ jobs:
           ${{ secrets.CLOUDWAYS_USER }}@${{ secrets.CLOUDWAYS_HOST }} << 'EOF'
             cd ${{ secrets.CLOUDWAYS_PATH }}
             npm ci --production
-            /home/master/.npm-global/node_modules/pm2/bin/pm2 restart nextapp || /home/master/.npm-global/node_modules/pm2/bin/pm2 start npm --name nextapp -- start
+            cp -r .next/static .next/standalone/.next/static
+            cp -r public .next/standalone/public
+            /home/master/.npm-global/node_modules/pm2/bin/pm2 restart nextapp || /home/master/.npm-global/node_modules/pm2/bin/pm2 start .next/standalone/server.js --name nextapp
             /home/master/.npm-global/node_modules/pm2/bin/pm2 save
           EOF
