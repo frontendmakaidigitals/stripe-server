@@ -70,7 +70,7 @@ jobs:
       - name: Copy files to server
         run: |
           rsync -avz --delete \
-            -e "ssh -i ~/.ssh/id_ed25519 -p 3022 -o StrictHostKeyChecking=no" \
+            -e "ssh -i ~/.ssh/id_ed25519 -p 22 -o StrictHostKeyChecking=no" \
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='.env' \
@@ -78,7 +78,7 @@ jobs:
 
       - name: Install & Restart on server
         run: |
-          ssh -i ~/.ssh/id_ed25519 -p 3022 -o StrictHostKeyChecking=no \
+          ssh -i ~/.ssh/id_ed25519 -p 22 -o StrictHostKeyChecking=no \
           ${{ secrets.CLOUDWAYS_USER }}@${{ secrets.CLOUDWAYS_HOST }} << 'EOF'
             cd ${{ secrets.CLOUDWAYS_PATH }}
             npm ci --production
