@@ -63,7 +63,7 @@ jobs:
               f.write(key + '\n')
           "
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -p 3022 -H ${{ secrets.CLOUDWAYS_HOST }} >> ~/.ssh/known_hosts
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
         env:
           SSH_KEY: ${{ secrets.CLOUDWAYS_SSH_KEY }}
 
