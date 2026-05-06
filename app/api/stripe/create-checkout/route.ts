@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-
 import type { CartItem, CustomerInfo } from "@/types/checkout.types";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -30,7 +29,7 @@ export async function POST(request: NextRequest) {
       discountCode,
       discountAmount,
       discountType,
-      cancelUrl
+      cancelUrl,
     }: {
       items: CartItem[];
       currency: string;
@@ -45,7 +44,10 @@ export async function POST(request: NextRequest) {
     } = body;
 
     if (!items?.length) {
-      return NextResponse.json({ error: "No items" }, { status: 400, headers: CORS_HEADERS });
+      return NextResponse.json(
+        { error: "No items" },
+        { status: 400, headers: CORS_HEADERS },
+      );
     }
 
     const curr = currency.toLowerCase();
@@ -63,33 +65,37 @@ export async function POST(request: NextRequest) {
       quantity: item.quantity,
     }));
 
+    // Shipping as a line item
     if (shipping && shipping > 0) {
       lineItems.push({
         price_data: {
           currency: curr,
-          product_data: { name: "Shipping", images: [] },
+          product_data: {
+            name: shippingHandle || "Shipping",
+            images: [],
+          },
           unit_amount: Math.round(shipping * 100),
         },
         quantity: 1,
       });
     }
 
-    // Build coupon using amount_off (in cents) for both percentage and fixed types.
-    // discountAmount is always the pre-calculated value in display currency
-    // (e.g. 20% of $478.17 = $95.63 — frontend already computed this).
+    // Build coupon — always use amount_off (pre-calculated on frontend)
     let discounts: { coupon: string }[] | undefined;
     if (discountCode && discountAmount && discountAmount > 0) {
       try {
         const amountOffCents = Math.round(discountAmount * 100);
         const coupon = await stripe.coupons.create({
           name: discountCode.toUpperCase(),
-          amount_off: amountOffCents,   // always use amount_off, never percent_off
+          amount_off: amountOffCents,
           currency: curr,
           duration: "once",
           max_redemptions: 1,
         });
         discounts = [{ coupon: coupon.id }];
-        console.log(`[Stripe] Coupon created: ${coupon.id} — ${amountOffCents} cents off`);
+        console.log(
+          `[Stripe] Coupon created: ${coupon.id} — ${amountOffCents} cents off`,
+        );
       } catch (e) {
         console.warn("[Stripe] Could not create coupon:", e);
       }
@@ -106,12 +112,14 @@ export async function POST(request: NextRequest) {
       success_url: `${baseUrl}/success`,
       cancel_url: cancelUrl ?? `${baseUrl}/checkout${token ? `?token=${token}` : ""}`,
       metadata: {
-        token: token || "",
-        customerName: (customer?.name || "").slice(0, 100),
-        customerEmail: (customer?.email || "").slice(0, 100),
+        token:          token || "",
+        customerName:   (customer?.name  || "").slice(0, 100),
+        customerEmail:  (customer?.email || "").slice(0, 100),
         currency,
-        shippingHandle: shippingHandle || "",
-        discountCode: discountCode || "",
+        shipping:       (shipping ?? 0).toFixed(2),        // ← for webhook
+        shippingHandle: shippingHandle || "Shipping",       // ← for webhook
+        discountCode:   discountCode   || "",               // ← single, clean
+        discountAmount: (discountAmount ?? 0).toFixed(2),   // ← safe, no crash
       },
     });
 
@@ -120,6 +128,9 @@ export async function POST(request: NextRequest) {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Checkout failed";
     console.error("Stripe checkout error:", message);
-    return NextResponse.json({ error: message }, { status: 500, headers: CORS_HEADERS });
+    return NextResponse.json(
+      { error: message },
+      { status: 500, headers: CORS_HEADERS },
+    );
   }
 }

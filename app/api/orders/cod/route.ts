@@ -54,11 +54,11 @@ async function createShopifyOrder(
   // COD fee as a non-taxable line item (separate from shipping)
   if (codFee > 0) {
     lineItems.push({
-      title: "Cash on Delivery Fee",
+      title: "COD (incl. VAT)",
       price: codFee.toFixed(2),
       quantity: 1,
       requires_shipping: false,
-      taxable: false, // ← no VAT applied by Shopify on this
+      taxable: false,  
     });
   }
 

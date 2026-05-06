@@ -20,6 +20,10 @@ async function createShopifyOrder(
   customer: CustomerInfo,
   currency: string,
   stripeSessionId: string,
+  shipping: number = 0,
+  shippingHandle: string = "Shipping",
+  discountAmount: number = 0,   // ← add
+  discountCode?: string, 
 ): Promise<string> {
   const domain = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN!;
   const token  = process.env.SHOPIFY_ACCESS_TOKEN!;
@@ -41,7 +45,7 @@ async function createShopifyOrder(
       ? { variant_id: parseInt(item.variant_id, 10), quantity: item.quantity }
       : {
           title:             item.product_title,
-          price:             item.price.toFixed(2),  // ✅ already decimal, no /100
+          price:             item.price.toFixed(2),
           quantity:          item.quantity,
           requires_shipping: true,
           taxable:           false,
@@ -65,6 +69,21 @@ async function createShopifyOrder(
           note:             `Paid via Stripe. Session: ${stripeSessionId}`,
           tags:             "Stripe, custom-checkout",
           send_receipt:     true,
+          ...(discountCode && discountAmount > 0 && {
+          applied_discount: {
+            title: discountCode,
+            value: discountAmount.toFixed(2),
+            value_type: "fixed_amount",
+            description: `Discount code: ${discountCode}`,
+          },}),
+          ...(shipping > 0
+            ? {
+                shipping_line: {
+                  title: shippingHandle,
+                  price: shipping.toFixed(2),
+                },
+              }
+            : {}),
         },
       }),
     },
@@ -101,11 +120,14 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
   const token    = meta.token;
   const currency = meta.currency || "AED";
 
+  // Shipping info from Stripe session metadata
+  const shipping       = parseFloat(meta.shipping       || "0");
+  const shippingHandle = meta.shippingHandle             || "Shipping";
+
   let customer: CustomerInfo;
   let items: CartItem[];
 
   if (token) {
-    // ✅ Primary path — verify token to get full order data
     try {
       const payload = await verifyCheckoutToken(token);
       customer = payload.customer;
@@ -115,7 +137,6 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
       return;
     }
   } else {
-    // Fallback for any old sessions
     try {
       customer = JSON.parse(meta.customer || "{}");
       items    = JSON.parse(meta.items    || "[]");
@@ -131,8 +152,18 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
   }
 
   try {
-    const orderName = await createShopifyOrder(items, customer, currency, session.id);
-    console.log(`✅ Shopify order ${orderName} created for Stripe session ${session.id}`);
+    const orderName = await createShopifyOrder(
+      items,
+      customer,
+      currency,
+      session.id,
+      shipping,
+      shippingHandle,
+    );
+    console.log(
+      `✅ Shopify order ${orderName} created for Stripe session ${session.id}`,
+      shipping > 0 ? `shipping=${shipping.toFixed(2)}` : "",
+    );
     if (token) markTokenUsed(token);
   } catch (err) {
     console.error("Failed to create Shopify order after Stripe payment:", err);
@@ -156,7 +187,11 @@ export async function POST(request: NextRequest) {
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET!);
+    event = stripe.webhooks.constructEvent(
+      rawBody,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET!,
+    );
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Signature mismatch";
     console.error("Webhook signature verification failed:", msg);
@@ -183,7 +218,10 @@ export async function POST(request: NextRequest) {
         console.log("Unhandled Stripe event:", event.type);
     }
   } catch (err: unknown) {
-    console.error("Webhook fulfillment error:", err instanceof Error ? err.message : err);
+    console.error(
+      "Webhook fulfillment error:",
+      err instanceof Error ? err.message : err,
+    );
   }
 
   return NextResponse.json({ received: true });

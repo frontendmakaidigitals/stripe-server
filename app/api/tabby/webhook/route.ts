@@ -101,6 +101,7 @@ async function createShopifyOrder(
   currency: string,
   tabbyPaymentId: string,
   shipping: number = 0,
+  shippingHandle: string = "Shipping", // ← added
   discountAmount: number = 0,
   discountCode?: string,
 ): Promise<string> {
@@ -140,13 +141,15 @@ async function createShopifyOrder(
     tags: "Tabby, BNPL, custom-checkout",
     send_receipt: true,
     currency,
+    // Shipping line with dynamic title
     ...(shipping > 0 && {
       shipping_line: {
-        title: "Shipping",
+        title: shippingHandle, // ← was hardcoded "Shipping"
         price: shipping.toFixed(2),
         code: "TABBY_SHIPPING",
       },
     }),
+    // Discount
     ...(discountCode &&
       discountAmount > 0 && {
         applied_discount: {
@@ -202,7 +205,7 @@ async function createShopifyOrder(
 
 // ── Webhook handler ────────────────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
-    console.log("[Tabby webhook] HIT — headers:", Object.fromEntries(request.headers));
+  console.log("[Tabby webhook] HIT — headers:", Object.fromEntries(request.headers));
 
   if (!verifyTabbySignature(request)) {
     console.warn("[Tabby webhook] Invalid signature — rejecting");
@@ -247,16 +250,14 @@ export async function POST(request: NextRequest) {
   try {
     const wasSet = await redis.set(idempotencyKey, "1", {
       ex: 60 * 60 * 24 * 7,
-      nx: true, // only sets if key doesn't exist — atomic, no race condition
+      nx: true,
     });
 
     if (wasSet === null) {
-      // null means key already existed — already processed
       console.log("[Tabby webhook] Already processed:", tabbyPaymentId);
       return NextResponse.json({ received: true });
     }
   } catch (err) {
-    // Don't proceed — better to make Tabby retry than create a duplicate order
     console.error("[Tabby webhook] Idempotency Redis error — aborting:", err);
     return NextResponse.json({ error: "Redis error" }, { status: 500 });
   }
@@ -278,21 +279,23 @@ export async function POST(request: NextRequest) {
       referenceId,
     );
 
+    console.log("[Tabby webhook] Payment ID:", body.id);
+    console.log("[Tabby webhook] Status:", body.status);
+    console.log("[Tabby webhook] Captures:", JSON.stringify(body.captures));
+    console.log("[Tabby webhook] closed_at:", body.closed_at);
+    console.log("[Tabby webhook] meta:", JSON.stringify(body.meta));
+    console.log("[Tabby webhook] order:", JSON.stringify(body.order));
+
     const orderName = await createShopifyOrder(
       checkoutPayload.items,
       checkoutPayload.customer,
       currency,
       tabbyPaymentId,
       checkoutPayload.shipping ?? 0,
+      checkoutPayload.shippingHandle ?? "Shipping", // ← added
       checkoutPayload.discountAmount ?? 0,
       checkoutPayload.discountCode,
-    );console.log("[Tabby webhook] Payment ID:", body.id);
-console.log("[Tabby webhook] Status:", body.status);
-console.log("[Tabby webhook] Captures:", JSON.stringify(body.captures));
-console.log("[Tabby webhook] closed_at:", body.closed_at);
-console.log("[Tabby webhook] meta:", JSON.stringify(body.meta));
-console.log("[Tabby webhook] order:", JSON.stringify(body.order));
-
+    );
 
     if (jwtToken) await markTokenUsed(jwtToken);
     if (referenceId) await redis.del(`tabby_checkout:${referenceId}`);
@@ -301,7 +304,6 @@ console.log("[Tabby webhook] order:", JSON.stringify(body.order));
       `[Tabby webhook] ✅ Order created: ${orderName} | Payment: ${tabbyPaymentId} | Currency: ${currency}`,
     );
   } catch (err) {
-    // Order creation failed — delete idempotency key so Tabby can retry
     await redis.del(idempotencyKey);
     console.error(
       "[Tabby webhook] Order creation failed, idempotency key cleared for retry:",
