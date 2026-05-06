@@ -30,54 +30,32 @@ async function createShopifyOrder(
   const [firstName, ...rest] = customer.name.trim().split(" ");
   const lastName = rest.join(" ") || "-";
 
-  const address = {
-    first_name: firstName,
-    last_name: lastName,
-    address1: customer.address,
-    city: customer.city,
-    country: customer.country || "AE",
-    phone: customer.phone,
-  };
-
   const isUAE =
     customer.country?.trim().toLowerCase() === "united arab emirates" ||
     customer.country?.trim().toUpperCase() === "AE";
 
-  // Use variant_id for inventory tracking but force price via applied_discount
-  const lineItems: object[] = items.map((item) => {
-    const basePrice = item.base_price ?? item.price;  
-    const targetPrice = item.price;                   
-    const diff = parseFloat((basePrice - targetPrice).toFixed(2));
-    const hasDiff = Math.abs(diff) >= 0.01;
+  const address = {
+    first_name: firstName,
+    last_name: lastName,
+    address1: customer.address,
+    address2: customer.address2 || "",
+    city: customer.city,
+    province: customer.province || "",  // ← emirate for UAE
+    zip: customer.zip || "",
+    country: customer.country || "AE",
+    phone: customer.phone,
+  };
 
-    const lineItem: Record<string, unknown> = {
-      variant_id: item.variant_id
-        ? parseInt(item.variant_id, 10)
-        : undefined,
-      title: item.variant_id ? undefined : item.product_title,
-      price: item.variant_id ? undefined : targetPrice.toFixed(2),
-      quantity: item.quantity,
-      requires_shipping: true,
-      taxable: isUAE,
-    };
-
-    // Remove undefined keys
-    Object.keys(lineItem).forEach(
-      (k) => lineItem[k] === undefined && delete lineItem[k],
-    );
-
-    // Apply discount to adjust price if needed
-    if (item.variant_id && hasDiff && diff > 0) {
-      lineItem.applied_discount = {
-        value_type: "fixed_amount",
-        value: (diff * item.quantity).toFixed(2),
-        title: "Price adjustment",
-        amount: (diff * item.quantity).toFixed(2),
-      };
-    }
-
-    return lineItem;
-  });
+  // Don't use variant_id — Shopify overrides price when variant_id present
+  // Use sku to keep product reference, set price explicitly
+  const lineItems: object[] = items.map((item) => ({
+    title: item.product_title,
+    sku: item.sku || item.variant_id || "",
+    price: item.price.toFixed(2), // market price (already enriched)
+    quantity: item.quantity,
+    requires_shipping: true,
+    taxable: isUAE,
+  }));
 
   // COD fee as non-taxable line item
   if (codFee > 0) {
@@ -104,7 +82,7 @@ async function createShopifyOrder(
           email: customer.email,
           shipping_address: address,
           billing_address: address,
-          tax_exempt: !isUAE, // non-UAE orders: no VAT
+          tax_exempt: !isUAE,
           note: `COD order — phone: ${customer.phone}${codFee > 0 ? ` | COD fee: ${codFee.toFixed(2)} ${currency}` : ""}`,
           tags: "COD, custom-checkout",
           send_receipt: false,
@@ -140,10 +118,15 @@ async function createShopifyOrder(
 
   const draftJson = await draftRes.json();
   console.log("[COD] Shopify draft order totals:", {
-    total_price:    draftJson.draft_order?.total_price,
-    subtotal_price: draftJson.draft_order?.subtotal_price,
-    total_tax:      draftJson.draft_order?.total_tax,
+    total_price:      draftJson.draft_order?.total_price,
+    subtotal_price:   draftJson.draft_order?.subtotal_price,
+    total_tax:        draftJson.draft_order?.total_tax,
     applied_discount: draftJson.draft_order?.applied_discount,
+    line_items:       draftJson.draft_order?.line_items?.map((l: any) => ({
+      title: l.title,
+      price: l.price,
+      sku: l.sku,
+    })),
   });
 
   const draft = draftJson.draft_order;
