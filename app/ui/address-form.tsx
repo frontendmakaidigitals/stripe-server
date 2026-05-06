@@ -236,14 +236,16 @@ export function AddressForm({
                     <Combobox
                       items={provinces}
                       value={
-                        provinces.find((p) => p.code === field.value)?.name ??
+                        provinces.find((p) => p.code === field.value)?.name ?? // ← still works if code stored
+                        provinces.find((p) => p.name === field.value)?.name ?? // ← also works if name stored
+                        field.value ??
                         ""
                       }
                       onValueChange={(v: any) => {
                         const name =
                           typeof v === "object" && v?.name ? v.name : v;
                         const province = provinces.find((p) => p.name === name);
-                        field.onChange(province?.code ?? name);
+                        field.onChange(province?.name ?? name); // ← store name instead of code
                       }}
                     >
                       <ComboboxInput
