@@ -1,6 +1,5 @@
 import { markTokenUsed } from "@/app/lib/used-tokens";
 import { NextRequest, NextResponse } from "next/server";
-
 import type { CartItem, CustomerInfo } from "@/types/checkout.types";
 
 interface CODRequest {
@@ -11,9 +10,9 @@ interface CODRequest {
   shipping?: number;
   shippingHandle?: string;
   codFee?: number;
-  discountCode?: string;       // ← add
-  discountAmount?: number;     // ← add
-  discountType?: string | null; // ← add
+  discountCode?: string;
+  discountAmount?: number;
+  discountType?: string | null;
 }
 
 async function createShopifyOrder(
@@ -21,51 +20,55 @@ async function createShopifyOrder(
   customer: CustomerInfo,
   currency: string,
   codFee: number = 0,
-  discountCode?: string,  
+  discountCode?: string,
+  shipping: number = 0,
+  shippingHandle: string = "Shipping",
 ) {
   const domain = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN!;
-  const token  = process.env.SHOPIFY_ACCESS_TOKEN!;
+  const token = process.env.SHOPIFY_ACCESS_TOKEN!;
 
   const [firstName, ...rest] = customer.name.trim().split(" ");
   const lastName = rest.join(" ") || "-";
 
   const address = {
     first_name: firstName,
-    last_name:  lastName,
-    address1:   customer.address,
-    city:       customer.city,
-    country:    customer.country || "AE",
-    phone:      customer.phone,
+    last_name: lastName,
+    address1: customer.address,
+    city: customer.city,
+    country: customer.country || "AE",
+    phone: customer.phone,
   };
 
   const lineItems: object[] = items.map((item) =>
     item.variant_id
       ? { variant_id: parseInt(item.variant_id, 10), quantity: item.quantity }
       : {
-          title:             item.product_title,
-          price:             item.price.toFixed(2),  // already decimal
-          quantity:          item.quantity,
+          title: item.product_title,
+          price: item.price.toFixed(2),
+          quantity: item.quantity,
           requires_shipping: true,
-          taxable:           false,
+          taxable: false,
         },
   );
 
-  // ✅ Add COD fee as a line item
   if (codFee > 0) {
     lineItems.push({
-      title:             "Cash on Delivery Fee (10%)",
-      price:             codFee.toFixed(2),
-      quantity:          1,
+      title: "Cash on Delivery Fee (10%)",
+      price: codFee.toFixed(2),
+      quantity: 1,
       requires_shipping: false,
-      taxable:           false,
+      taxable: false,
     });
   }
 
-   const draftRes = await fetch(
+  const draftRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders.json`,
     {
       method: "POST",
-      headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
+      headers: {
+        "X-Shopify-Access-Token": token,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         draft_order: {
           line_items: lineItems,
@@ -75,13 +78,27 @@ async function createShopifyOrder(
           note: `COD order — phone: ${customer.phone}${codFee > 0 ? ` | COD fee: ${codFee.toFixed(2)} ${currency}` : ""}`,
           tags: "COD, custom-checkout",
           send_receipt: false,
-          ...(discountCode ? { applied_discount: {
-            value_type: "percentage",   // Shopify will look it up by code
-            value: "0",
-            title: discountCode,
-            description: discountCode,
-            application_type: "discount_code",  // ← tells Shopify to apply the actual code
-          }} : {}),
+          // Shipping line
+          ...(shipping > 0
+            ? {
+                shipping_line: {
+                  title: shippingHandle,
+                  price: shipping.toFixed(2),
+                },
+              }
+            : {}),
+          // Discount code
+          ...(discountCode
+            ? {
+                applied_discount: {
+                  value_type: "percentage",
+                  value: "0",
+                  title: discountCode,
+                  description: discountCode,
+                  application_type: "discount_code",
+                },
+              }
+            : {}),
         },
       }),
     },
@@ -98,10 +115,10 @@ async function createShopifyOrder(
   const completeRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders/${draft.id}/complete.json?payment_pending=true`,
     {
-      method:  "PUT",
+      method: "PUT",
       headers: {
         "X-Shopify-Access-Token": token,
-        "Content-Type":           "application/json",
+        "Content-Type": "application/json",
       },
     },
   );
@@ -118,6 +135,7 @@ async function createShopifyOrder(
     `customer=${customer.email}`,
     `total=${completed.total_price} ${currency}`,
     codFee > 0 ? `codFee=${codFee.toFixed(2)}` : "",
+    shipping > 0 ? `shipping=${shipping.toFixed(2)}` : "",
   );
 
   return { orderId: completed.name, numericId: completed.id };
@@ -126,25 +144,46 @@ async function createShopifyOrder(
 export async function POST(request: NextRequest) {
   try {
     const body: CODRequest = await request.json();
-    const { items, currency = "AED", customer, codFee = 0, discountCode } = body;
+    const {
+      items,
+      currency = "AED",
+      customer,
+      codFee = 0,
+      discountCode,
+      shipping = 0,
+      shippingHandle = "Shipping",
+    } = body;
 
     if (!items?.length) {
       return NextResponse.json({ error: "No items in cart" }, { status: 400 });
     }
-    if (!customer?.name || !customer?.email || !customer?.phone || !customer?.address || !customer?.city) {
-      return NextResponse.json({ error: "Missing customer details" }, { status: 400 });
+    if (
+      !customer?.name ||
+      !customer?.email ||
+      !customer?.phone ||
+      !customer?.address ||
+      !customer?.city
+    ) {
+      return NextResponse.json(
+        { error: "Missing customer details" },
+        { status: 400 },
+      );
     }
 
-const result = await createShopifyOrder(items, customer, currency, codFee, discountCode);
+    const result = await createShopifyOrder(
+      items,
+      customer,
+      currency,
+      codFee,
+      discountCode,
+      shipping,
+      shippingHandle,
+    );
 
     const token = request.headers.get("x-checkout-token") || body.token;
     if (token) markTokenUsed(token);
 
-    return NextResponse.json({
-      success: true,
-      orderId: result.orderId,
-    });
-
+    return NextResponse.json({ success: true, orderId: result.orderId });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Order creation failed";
     console.error("COD order error:", message);

@@ -6,6 +6,7 @@ import { fmt } from "../lib/checkout-utils";
 import type { ShippingRate } from "@/types/checkout.types";
 
 const VAT_RATE = 0.05;
+const VAT_DIVISOR = 1 + VAT_RATE; // 1.05
 
 export function OrderSummary({
   selectedRate,
@@ -19,19 +20,64 @@ export function OrderSummary({
   const [discountCode, setDiscountCode] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const { currency, totals, method, discountResult, items, total } =
+  const { currency, totals, method, discountResult, items, total, customer } =
     useCheckoutContext();
 
   const { shippingCost, codFee, grandTotal, discountAmount } = totals;
-  const isAED = currency === "AED";
-  const subtotalExclVAT = isAED
-    ? Math.round((total / (1 + VAT_RATE)) * 100) / 100
+  const isUAE =
+    customer?.country?.trim().toLowerCase() === "united arab emirates" ||
+    customer?.country?.trim().toUpperCase() === "AE";
+
+  const subtotalExclVAT = isUAE
+    ? Math.round((total / VAT_DIVISOR) * 100) / 100
     : total;
-  const vatAmount = isAED
-    ? Math.round(((total * VAT_RATE) / (1 + VAT_RATE)) * 100) / 100
+
+  const codFeeExclVAT = isUAE
+    ? Math.round((codFee / VAT_DIVISOR) * 100) / 100
+    : codFee;
+
+  const shippingExclVAT = isUAE
+    ? Math.round((shippingCost / VAT_DIVISOR) * 100) / 100
+    : shippingCost;
+
+  // Discount computed from ex-VAT subtotal directly
+  const discountExclVAT = discountResult?.valid
+    ? discountResult.type === "percentage"
+      ? Math.round(subtotalExclVAT * (discountResult.amount / 100) * 100) / 100
+      : isUAE
+        ? Math.round((discountResult.amount / VAT_DIVISOR) * 100) / 100
+        : discountResult.amount
     : 0;
 
-  const finalTotal = grandTotal;
+  // VAT per line
+  const vatOnSubtotal = isUAE
+    ? Math.round((total - subtotalExclVAT) * 100) / 100
+    : 0;
+  const vatOnCod = isUAE ? Math.round((codFee - codFeeExclVAT) * 100) / 100 : 0;
+  const vatOnShipping = isUAE
+    ? Math.round((shippingCost - shippingExclVAT) * 100) / 100
+    : 0;
+  const vatOnDiscount = isUAE
+    ? Math.round(discountExclVAT * VAT_RATE * 100) / 100
+    : 0;
+
+  const totalVAT = isUAE
+    ? Math.round(
+        (vatOnSubtotal - vatOnDiscount + vatOnCod + vatOnShipping) * 100,
+      ) / 100
+    : 0;
+
+  const finalTotal = isUAE
+    ? Math.round(
+        (subtotalExclVAT -
+          discountExclVAT +
+          codFeeExclVAT +
+          shippingExclVAT +
+          totalVAT) *
+          100,
+      ) / 100
+    : grandTotal;
+
   async function handleApply() {
     if (!discountCode.trim()) return;
     setLoading(true);
@@ -115,47 +161,66 @@ export function OrderSummary({
 
         {/* Totals */}
         <div className="border-t border-[#e0e0e0] pt-5 flex flex-col gap-3">
+          {/* Subtotal ex-VAT */}
           <div className="flex justify-between text-sm text-[#555]">
-            <span>Subtotal</span>
+            <span>Subtotal {isUAE ? " (excl. VAT)" : ""}</span>
             <span className="font-medium text-[#1a1a1a]">
               {fmt(subtotalExclVAT, currency)}
             </span>
           </div>
 
-          {discountResult?.valid && (
-            <div className="flex justify-between text-sm text-green-600">
-              <span>Discount ({discountResult.code})</span>
-              <span>− {fmt(discountAmount, currency)}</span>
-            </div>
+          {/* Discount ex-VAT */}
+          {discountResult?.valid && discountExclVAT > 0 && (
+            <>
+              <div className="flex justify-between text-sm text-green-600">
+                <span>Discount ({discountResult.code})</span>
+                <span>− {fmt(discountExclVAT, currency)}</span>
+              </div>
+              <div className="flex justify-between text-sm text-[#555]">
+                <span>Subtotal after discount</span>
+                <span className="font-medium text-[#1a1a1a]">
+                  {fmt(
+                    Math.round((subtotalExclVAT - discountExclVAT) * 100) / 100,
+                    currency,
+                  )}
+                </span>
+              </div>
+            </>
           )}
 
+          {/* COD fee ex-VAT */}
           {method === "cod" && codFee > 0 && (
             <div className="flex justify-between text-sm text-amber-600">
-              <span>COD fee</span>
-              <span>+ {fmt(codFee, currency)}</span>
+              <span>COD fee {isUAE ? " (excl. VAT)" : ""}</span>
+              <span>+ {fmt(codFeeExclVAT, currency)}</span>
             </div>
           )}
 
+          {/* Shipping ex-VAT */}
           <div className="flex justify-between text-sm text-[#555]">
-            <span>Shipping</span>
+            <span>Shipping {isUAE ? " (excl. VAT)" : ""}</span>
             <span className="font-medium text-[#1a1a1a]">
               {ratesLoading
                 ? "Calculating…"
                 : !selectedRate
                   ? "—"
-                  : shippingCost === 0
+                  : shippingExclVAT === 0
                     ? "FREE"
-                    : fmt(shippingCost, currency)}
+                    : fmt(shippingExclVAT, currency)}
             </span>
           </div>
-          {isAED && (
+
+          {/* VAT row — sum of all VAT portions */}
+          {isUAE && (
             <div className="flex justify-between text-sm text-[#555]">
-              <span>VAT (5% included)</span>
+              <span>VAT ( @ 5% )</span>
               <span className="font-medium text-[#1a1a1a]">
-                {fmt(vatAmount, currency)}
+                {fmt(totalVAT, currency)}
               </span>
             </div>
           )}
+
+          {/* Grand total */}
           <div className="flex justify-between items-baseline border-t border-[#e0e0e0] pt-4 mt-1">
             <span className="text-base font-semibold">Total</span>
             <span className="text-2xl font-bold">

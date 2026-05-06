@@ -40,7 +40,8 @@ export function useShippingRates({
 
   async function fetchShippingRates(addr: CustomerInfo) {
     if (!addr.city || !addr.country) return;
-    if (currency !== "AED" && aedToBase === 1) return;
+    if (currency !== "AED" && (!aedToBase || aedToBase === 0)) return;
+
 
     const countryCode = toCountryCode(addr.country);
     setRatesLoading(true);
