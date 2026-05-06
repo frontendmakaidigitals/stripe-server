@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import AddressFormatter from "@shopify/address";
 import countriesLib from "i18n-iso-countries";
 import en from "i18n-iso-countries/langs/en.json";
+import * as RPNInput from "react-phone-number-input";
 import {
   Combobox,
   ComboboxContent,
@@ -51,7 +52,6 @@ const countries = Object.entries(countriesLib.getNames("en"))
 
 const INPUT =
   "w-full border border-[#d4d4d4] rounded-[6px] px-4 py-3 text-sm outline-none focus:border-[#1a1a1a] transition-colors";
-
 const INPUT_ERROR = "border-red-400 bg-red-50";
 
 type Props = {
@@ -76,14 +76,18 @@ export function AddressForm({
     register,
     control,
     watch,
-    formState: { errors, submitCount }, // ← submitCount forces re-render after each submit attempt
+    setValue,
+    trigger,
+    formState: { errors },
   } = useFormContext();
 
   const [countryData, setCountryData] = useState<CountryData | null>(null);
   const [loadingCountry, setLoadingCountry] = useState(false);
 
   const countryCode = watch("countryCode");
+  const phoneValue = watch("phone");
 
+  // Fetch country formatting data
   useEffect(() => {
     if (!countryCode) return;
     setLoadingCountry(true);
@@ -99,6 +103,12 @@ export function AddressForm({
       .catch(() => setCountryData(null))
       .finally(() => setLoadingCountry(false));
   }, [countryCode]);
+
+  // Reset phone when country changes
+  useEffect(() => {
+    if (!countryCode) return;
+    setValue("phone", "");
+  }, [countryCode, setValue]);
 
   const editTemplate = countryData?.formatting?.edit ?? "";
   const visibleFields = parseFields(editTemplate);
@@ -120,7 +130,6 @@ export function AddressForm({
   const showProvince = shows("province") && (loadingCountry || hasProvinces);
   const showCityAndProvince = showCity && showProvince;
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="mt-3 flex flex-col gap-3 border border-gray-200 rounded-lg p-4 bg-white">
       <p className="text-sm font-medium text-[#1a1a1a]">New address</p>
@@ -282,32 +291,22 @@ export function AddressForm({
         </div>
       )}
 
-      {/* ── Phone ── */}
+      {/* ── Phone — no Controller needed, driven by setValue/watch ── */}
       {shows("phone") && (
-        <Controller
-          name="phone"
-          control={control}
-          render={({ field, fieldState }) => (
-            <div
-              className={
-                fieldState.error ? "rounded-[6px] ring-1 ring-red-400" : ""
-              }
-            >
-              <PhoneInput
-                placeholder={labels?.phone ?? "Phone"}
-                type="tel"
-                value={field.value}
-                onChange={field.onChange}
-                error={!!fieldState.error}
-              />
-              {fieldState.error && (
-                <p className="text-xs text-red-500 mt-1">
-                  {fieldState.error.message}
-                </p>
-              )}
-            </div>
-          )}
-        />
+        <div>
+          <PhoneInput
+            placeholder={labels?.phone ?? "Phone"}
+            value={phoneValue ?? ""}
+            onChange={(val) => {
+              setValue("phone", val);
+              trigger("phone");
+            }}
+            error={!!errors.phone}
+            lockedCountry={
+              countryCode ? (countryCode as RPNInput.Country) : undefined
+            }
+          />
+        </div>
       )}
 
       {saveError && <p className="text-xs text-red-500">{saveError}</p>}

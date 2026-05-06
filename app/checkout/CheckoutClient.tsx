@@ -4,7 +4,7 @@ import { useState } from "react";
 import { FormProvider } from "react-hook-form";
 import countriesLib from "i18n-iso-countries";
 import en from "i18n-iso-countries/langs/en.json";
-
+import { Spinner } from "@/components/ui/spinner";
 import type {
   CheckoutPayload,
   CustomerInfo,
@@ -220,7 +220,6 @@ export default function CheckoutClient({
         formValues.firstName,
       );
 
-
   const isTabbySupported = isTabbyAvailable(totals.grandTotal, currency);
   const TAMARA_CURRENCIES = ["AED", "KWD", "SAR"];
   const isTamaraSupported = TAMARA_CURRENCIES.includes(currency.toUpperCase());
@@ -315,17 +314,22 @@ export default function CheckoutClient({
                           (!shippingReady &&
                             !(hasAddresses && !address.useNewAddress))
                         }
-                        className={`w-full rounded-[6px] py-4 text-base font-semibold text-white transition-all ${
+                        className={`w-full bg-primary rounded-[6px] py-4 text-base font-semibold text-white transition-all ${
                           !method || loading
                             ? "bg-[#aaa] cursor-not-allowed"
                             : "bg-primary hover:bg-primary/90 active:scale-[0.99]"
                         }`}
                       >
-                        {loading
-                          ? "Processing…"
-                          : method === "stripe"
-                            ? "Pay now"
-                            : "Place order"}
+                        {loading ? (
+                          <span className="flex gap-2 items-center justify-center">
+                            <Spinner color={"white"} size={24} stroke={1.5} />
+                            Processing payment
+                          </span>
+                        ) : method === "stripe" ? (
+                          "Pay now"
+                        ) : (
+                          "Place order"
+                        )}
                       </button>
 
                       <div className="mt-6 flex justify-center gap-6 text-xs text-[#aaa]">

@@ -2,10 +2,8 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-
-
 :root {
-  --primary: oklch(0.205 0 0);
+  --primary: #a88a64;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);

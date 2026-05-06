@@ -12,7 +12,6 @@ export type CheckoutFormValues = {
   address1:    string;
   city:        string;
   countryCode: string;
-  // Optional in Zod schema — must be optional here too
   lastName?:   string;
   address2?:   string;
   province?:   string;
@@ -23,26 +22,29 @@ export function useCheckoutForm(prefill: CheckoutPayload["customer"]) {
   const [provinceRequired, setProvinceRequired] = useState(false);
   const [zipRequired,      setZipRequired]      = useState(false);
 
-  // Refs so the resolver closure always sees current values without
-  // causing useForm to re-initialise (which would reset field values).
+
+  const [countryCode,      setCountryCode]      = useState("AE"); // ← add
+
   const provinceRequiredRef = useRef(false);
   const zipRequiredRef      = useRef(false);
+  const countryCodeRef      = useRef("AE"); // ← add
 
   useEffect(() => {
     provinceRequiredRef.current = provinceRequired;
     zipRequiredRef.current      = zipRequired;
   }, [provinceRequired, zipRequired]);
-
-  // Cast needed because zodResolver's return type is inferred from the Zod
-  // schema's output shape (which has optionals), while Resolver<T> expects T
-  // exactly. The cast is safe — the runtime values are the same.
-  const resolver = (async (data, context, options) =>
-    zodResolver(
+ 
+  const resolver = (async (data, context, options) => {
+    // Keep countryCode ref in sync from form data directly
+    countryCodeRef.current = data.countryCode || "AE"; // ← add
+    return zodResolver(
       checkoutSchemaWithFlags(
         provinceRequiredRef.current,
         zipRequiredRef.current,
+        countryCodeRef.current,  
       ),
-    )(data, context, options)) as Resolver<CheckoutFormValues>;
+    )(data, context, options);
+  }) as Resolver<CheckoutFormValues>;
 
   const methods = useForm<CheckoutFormValues>({
     resolver,
@@ -58,11 +60,21 @@ export function useCheckoutForm(prefill: CheckoutPayload["customer"]) {
       province:    "",
       zip:         "",
     },
-    mode:           "onSubmit",  // only validate on submit attempt
-    reValidateMode: "onChange",  // re-validate each field once the user fixes it
+    mode:           "onSubmit",
+    reValidateMode: "onChange",
   });
 
-  // Clear stale errors when country-driven required flags change
+  // Sync countryCode state when form field changes
+  useEffect(() => {
+    const sub = methods.watch((values) => {
+      if (values.countryCode) {
+        setCountryCode(values.countryCode);
+        countryCodeRef.current = values.countryCode;
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [methods]);
+
   useEffect(() => {
     methods.clearErrors();
   }, [provinceRequired, zipRequired]);

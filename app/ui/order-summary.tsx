@@ -4,6 +4,7 @@ import { useCheckoutContext } from "../checkout/checkoutContext";
 import { useState } from "react";
 import { fmt } from "../lib/checkout-utils";
 import type { ShippingRate } from "@/types/checkout.types";
+import { Spinner } from "@/components/ui/spinner";
 
 const VAT_RATE = 0.05;
 const VAT_DIVISOR = 1 + VAT_RATE; // 1.05
@@ -135,9 +136,9 @@ export function OrderSummary({
           <button
             onClick={handleApply}
             disabled={loading || !discountCode.trim()}
-            className="border disabled:bg-gray-400 border-[#d4d4d4] rounded-md px-4 py-2.5 text-sm font-medium bg-primary text-white transition-colors"
+            className="border disabled:bg-gray-400 border-[#d4d4d4] flex justify-center items-center rounded-md w-18 py-2.5 text-sm font-medium bg-primary text-white transition-all"
           >
-            {loading ? "…" : "Apply"}
+            {loading ? <Spinner size={24} stroke={1.5} /> : "Apply"}
           </button>
         </div>
 
