@@ -39,35 +39,54 @@ async function createShopifyOrder(
     phone: customer.phone,
   };
 
- const isUAE = 
-  customer.country?.trim().toLowerCase() === "united arab emirates" ||
-  customer.country?.trim().toUpperCase() === "AE";
+  const isUAE =
+    customer.country?.trim().toLowerCase() === "united arab emirates" ||
+    customer.country?.trim().toUpperCase() === "AE";
 
-const lineItems: object[] = items.map((item) =>
-  item.variant_id
-    ? {
-        variant_id: parseInt(item.variant_id, 10),
-        quantity: item.quantity,
-        price: item.price.toFixed(2), 
-        taxable: isUAE,               
-      }
-    : {
-        title: item.product_title,
-        price: item.price.toFixed(2),
-        quantity: item.quantity,
-        requires_shipping: true,
-        taxable: isUAE,
-      },
-);
+  // Use variant_id for inventory tracking but force price via applied_discount
+  const lineItems: object[] = items.map((item) => {
+    const basePrice = item.base_price ?? item.price;  
+    const targetPrice = item.price;                   
+    const diff = parseFloat((basePrice - targetPrice).toFixed(2));
+    const hasDiff = Math.abs(diff) >= 0.01;
 
-  // COD fee as a non-taxable line item (separate from shipping)
+    const lineItem: Record<string, unknown> = {
+      variant_id: item.variant_id
+        ? parseInt(item.variant_id, 10)
+        : undefined,
+      title: item.variant_id ? undefined : item.product_title,
+      price: item.variant_id ? undefined : targetPrice.toFixed(2),
+      quantity: item.quantity,
+      requires_shipping: true,
+      taxable: isUAE,
+    };
+
+    // Remove undefined keys
+    Object.keys(lineItem).forEach(
+      (k) => lineItem[k] === undefined && delete lineItem[k],
+    );
+
+    // Apply discount to adjust price if needed
+    if (item.variant_id && hasDiff && diff > 0) {
+      lineItem.applied_discount = {
+        value_type: "fixed_amount",
+        value: (diff * item.quantity).toFixed(2),
+        title: "Price adjustment",
+        amount: (diff * item.quantity).toFixed(2),
+      };
+    }
+
+    return lineItem;
+  });
+
+  // COD fee as non-taxable line item
   if (codFee > 0) {
     lineItems.push({
       title: "COD (incl. VAT)",
       price: codFee.toFixed(2),
       quantity: 1,
       requires_shipping: false,
-      taxable: false,  
+      taxable: false,
     });
   }
 
@@ -85,10 +104,10 @@ const lineItems: object[] = items.map((item) =>
           email: customer.email,
           shipping_address: address,
           billing_address: address,
+          tax_exempt: !isUAE, // non-UAE orders: no VAT
           note: `COD order — phone: ${customer.phone}${codFee > 0 ? ` | COD fee: ${codFee.toFixed(2)} ${currency}` : ""}`,
           tags: "COD, custom-checkout",
           send_receipt: false,
-          // Shipping only (no COD bundled)
           ...(shipping > 0
             ? {
                 shipping_line: {
@@ -97,7 +116,6 @@ const lineItems: object[] = items.map((item) =>
                 },
               }
             : {}),
-          // Discount code
           ...(discountCode
             ? {
                 applied_discount: {
@@ -120,7 +138,15 @@ const lineItems: object[] = items.map((item) =>
     throw new Error(`Shopify error: ${draftRes.status}`);
   }
 
-  const { draft_order: draft } = await draftRes.json();
+  const draftJson = await draftRes.json();
+  console.log("[COD] Shopify draft order totals:", {
+    total_price:    draftJson.draft_order?.total_price,
+    subtotal_price: draftJson.draft_order?.subtotal_price,
+    total_tax:      draftJson.draft_order?.total_tax,
+    applied_discount: draftJson.draft_order?.applied_discount,
+  });
+
+  const draft = draftJson.draft_order;
 
   const completeRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders/${draft.id}/complete.json?payment_pending=true`,
@@ -140,6 +166,14 @@ const lineItems: object[] = items.map((item) =>
 
   const { draft_order: completed } = await completeRes.json();
 
+  console.log(
+    `✅ COD order created: ${completed.name}`,
+    `customer=${customer.email}`,
+    `total=${completed.total_price} ${currency}`,
+    codFee > 0 ? `codFee=${codFee.toFixed(2)}` : "",
+    shipping > 0 ? `shipping=${shipping.toFixed(2)}` : "",
+    `isUAE=${isUAE}`,
+  );
 
   return { orderId: completed.name, numericId: completed.id };
 }

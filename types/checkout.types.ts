@@ -47,7 +47,8 @@ export type CustomerInfo = {
 export interface CartItem {
   product_title: string;
   quantity: number;
-  price: number;      
+  price: number;       // your display price (with markup/VAT logic)
+  base_price?: number; // original Shopify price (store this when building cart)
   image?: string;
   variant_id?: string;
   sku?: string;
