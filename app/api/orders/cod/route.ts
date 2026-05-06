@@ -39,17 +39,26 @@ async function createShopifyOrder(
     phone: customer.phone,
   };
 
-  const lineItems: object[] = items.map((item) =>
-    item.variant_id
-      ? { variant_id: parseInt(item.variant_id, 10), quantity: item.quantity }
-      : {
-          title: item.product_title,
-          price: item.price.toFixed(2),
-          quantity: item.quantity,
-          requires_shipping: true,
-          taxable: false,
-        },
-  );
+ const isUAE = 
+  customer.country?.trim().toLowerCase() === "united arab emirates" ||
+  customer.country?.trim().toUpperCase() === "AE";
+
+const lineItems: object[] = items.map((item) =>
+  item.variant_id
+    ? {
+        variant_id: parseInt(item.variant_id, 10),
+        quantity: item.quantity,
+        price: item.price.toFixed(2), 
+        taxable: isUAE,               
+      }
+    : {
+        title: item.product_title,
+        price: item.price.toFixed(2),
+        quantity: item.quantity,
+        requires_shipping: true,
+        taxable: isUAE,
+      },
+);
 
   // COD fee as a non-taxable line item (separate from shipping)
   if (codFee > 0) {
@@ -131,13 +140,6 @@ async function createShopifyOrder(
 
   const { draft_order: completed } = await completeRes.json();
 
-  console.log(
-    `✅ COD order created: ${completed.name}`,
-    `customer=${customer.email}`,
-    `total=${completed.total_price} ${currency}`,
-    codFee > 0 ? `codFee=${codFee.toFixed(2)}` : "",
-    shipping > 0 ? `shipping=${shipping.toFixed(2)}` : "",
-  );
 
   return { orderId: completed.name, numericId: completed.id };
 }
