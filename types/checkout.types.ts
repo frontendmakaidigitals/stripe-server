@@ -62,6 +62,8 @@ export interface ShopifyAddress {
   city: string;
   country: string;
   is_default: boolean;
+  province?: string;
+  zip?: string;
 }
 export interface checkoutItem {
   product_title: string;

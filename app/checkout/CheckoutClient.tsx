@@ -172,6 +172,9 @@ export default function CheckoutClient({
           address: [saved.address1, saved.address2].filter(Boolean).join(", "),
           city: saved.city,
           country: saved.country,
+          address2: saved.address2 || "",
+          province: saved.province || "",
+          zip: saved.zip || "",
         };
       }
     }
@@ -199,6 +202,9 @@ export default function CheckoutClient({
           city: data.city,
           countryCode: data.countryCode,
           country: data.countryCode,
+          address2: data.address2 || "",
+          province: data.province || "",
+          zip: data.zip || "",
         };
         setCustomer(freshCustomer);
         dispatchPayment(method, freshCustomer);
