@@ -39,6 +39,7 @@ async function createShopifyOrder(
     phone: customer.phone,
   };
 
+  // Only real product line items — no COD fee here
   const lineItems: object[] = items.map((item) =>
     item.variant_id
       ? { variant_id: parseInt(item.variant_id, 10), quantity: item.quantity }
@@ -51,15 +52,11 @@ async function createShopifyOrder(
         },
   );
 
-  if (codFee > 0) {
-    lineItems.push({
-      title: "Cash on Delivery Fee (10%)",
-      price: codFee.toFixed(2),
-      quantity: 1,
-      requires_shipping: false,
-      taxable: false,
-    });
-  }
+  // Combine shipping + COD fee into a single shipping_line
+  const totalShipping = shipping + codFee;
+  const shippingTitle = codFee > 0
+    ? `${shippingHandle} + COD Fee (${codFee.toFixed(2)} ${currency})`
+    : shippingHandle;
 
   const draftRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders.json`,
@@ -78,12 +75,12 @@ async function createShopifyOrder(
           note: `COD order — phone: ${customer.phone}${codFee > 0 ? ` | COD fee: ${codFee.toFixed(2)} ${currency}` : ""}`,
           tags: "COD, custom-checkout",
           send_receipt: false,
-          // Shipping line
-          ...(shipping > 0
+          // Single shipping line combining shipping + COD fee
+          ...(totalShipping > 0
             ? {
                 shipping_line: {
-                  title: shippingHandle,
-                  price: shipping.toFixed(2),
+                  title: shippingTitle,
+                  price: totalShipping.toFixed(2),
                 },
               }
             : {}),
