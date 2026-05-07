@@ -81,6 +81,7 @@ async function createShopifyOrder(
           shipping_address: address,
           billing_address:  address,
           tax_exempt:       !isUAE,
+          taxes_included: true, 
           note: `COD order — phone: ${customer.phone}${codFee > 0 ? ` | COD fee: ${codFee.toFixed(2)} ${currency}` : ""}`,
           tags:             "COD, custom-checkout",
           send_receipt:     false,
