@@ -18,7 +18,6 @@ async function getRawBody(request: NextRequest): Promise<Buffer> {
 async function createShopifyOrder(
   items: CartItem[],
   customer: CustomerInfo,
-  currency: string,
   stripeSessionId: string,
   shipping: number = 0,
   shippingHandle: string = "Shipping",
@@ -47,14 +46,16 @@ async function createShopifyOrder(
     phone:      customer.phone    || "",
   };
 
-  // Don't use variant_id — Shopify overrides price when variant_id present
+  // All prices are AED (pre-converted by the frontend before being stored in
+  // metadata / the checkout token). taxes_included: true so Shopify back-
+  // calculates VAT correctly — identical to the COD flow.
   const lineItems: object[] = items.map((item) => ({
     title:             item.product_title,
     sku:               item.sku || item.variant_id || "",
-    price:             item.price.toFixed(2),
+    price:             item.price.toFixed(2),   // AED, VAT-inclusive
     quantity:          item.quantity,
     requires_shipping: true,
-    taxable:           isUAE,
+    taxable:           true,                    // ✅ back-calculate VAT from inclusive price
   }));
 
   const draftRes = await fetch(
@@ -67,28 +68,46 @@ async function createShopifyOrder(
       },
       body: JSON.stringify({
         draft_order: {
-          line_items:       lineItems,
-          email:            customer.email,
+          line_items:     lineItems,
+          email:          customer.email,
           shipping_address: address,
           billing_address:  address,
-          tax_exempt:       !isUAE,
-          note:             `Paid via Stripe. Session: ${stripeSessionId}`,
-          tags:             "Stripe, custom-checkout",
-          send_receipt:     true,
+          tax_exempt:     !isUAE,
+          taxes_included: true,                 // ✅ prices are VAT-inclusive
+          note:           `Paid via Stripe. Session: ${stripeSessionId}`,
+          tags:           "Stripe, custom-checkout",
+          send_receipt:   true,
+
           ...(shipping > 0 && {
             shipping_line: {
-              title: shippingHandle,
-              price: shipping.toFixed(2),
+              title:   shippingHandle,
+              price:   shipping.toFixed(2),     // AED, VAT-inclusive
+              taxable: true,
             },
           }),
-          ...(discountCode && discountAmount > 0 && {
-            applied_discount: {
-              title:       discountCode,
-              value:       discountAmount.toFixed(2),
-              value_type:  "fixed_amount",
-              description: `Discount code: ${discountCode}`,
-            },
-          }),
+
+          // Mirror COD discount structure exactly
+          ...(discountCode && discountAmount > 0
+            ? {
+                applied_discount: {
+                  value_type:  "fixed_amount",
+                  value:       discountAmount.toFixed(2),
+                  amount:      discountAmount.toFixed(2),
+                  title:       discountCode,
+                  description: `Discount code: ${discountCode}`,
+                },
+              }
+            : discountCode
+            ? {
+                applied_discount: {
+                  value_type:       "percentage",
+                  value:            "0",
+                  title:            discountCode,
+                  description:      discountCode,
+                  application_type: "discount_code",
+                },
+              }
+            : {}),
         },
       }),
     },
@@ -98,8 +117,25 @@ async function createShopifyOrder(
     throw new Error(`Shopify draft order error: ${await draftRes.text()}`);
   }
 
-  const { draft_order: draft } = await draftRes.json();
+  const draftJson = await draftRes.json();
 
+  console.log("[Stripe webhook] Shopify draft order totals:", {
+    total_price:      draftJson.draft_order?.total_price,
+    subtotal_price:   draftJson.draft_order?.subtotal_price,
+    total_tax:        draftJson.draft_order?.total_tax,
+    taxes_included:   draftJson.draft_order?.taxes_included,
+    applied_discount: draftJson.draft_order?.applied_discount,
+    line_items: draftJson.draft_order?.line_items?.map((l: any) => ({
+      title:     l.title,
+      price:     l.price,
+      taxable:   l.taxable,
+      tax_lines: l.tax_lines,
+    })),
+  });
+
+  const draft = draftJson.draft_order;
+
+  // payment_pending=false because Stripe already captured the payment
   const completeRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders/${draft.id}/complete.json?payment_pending=false`,
     {
@@ -123,11 +159,12 @@ async function createShopifyOrder(
 async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
   const meta           = session.metadata ?? {};
   const token          = meta.token;
-  const currency       = meta.currency       || "AED";
-  const shipping       = parseFloat(meta.shipping       || "0");
+  // All monetary metadata is stored in AED (set by create-checkout)
+  const aedToBase      = parseFloat(meta.aedToBase      || "1");
+  const shipping       = parseFloat(meta.shipping       || "0");   // AED
   const shippingHandle = meta.shippingHandle || "Shipping";
   const discountCode   = meta.discountCode   || undefined;
-  const discountAmount = parseFloat(meta.discountAmount || "0");
+  const discountAmount = parseFloat(meta.discountAmount || "0");   // AED
 
   let customer: CustomerInfo;
   let items: CartItem[];
@@ -136,15 +173,24 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
     try {
       const payload = await verifyCheckoutToken(token);
       customer = payload.customer;
-      items    = payload.items;
+      // Token items are in display currency — convert to AED
+      items = payload.items.map((item) => ({
+        ...item,
+        price: aedToBase > 0 ? item.price / aedToBase : item.price,
+      }));
     } catch (err) {
       console.error("Could not verify checkout token:", err);
       return;
     }
   } else {
     try {
+      const rawItems: CartItem[] = JSON.parse(meta.items || "[]");
       customer = JSON.parse(meta.customer || "{}");
-      items    = JSON.parse(meta.items    || "[]");
+      // Same conversion for the fallback metadata path
+      items = rawItems.map((item) => ({
+        ...item,
+        price: aedToBase > 0 ? item.price / aedToBase : item.price,
+      }));
     } catch {
       console.error("Could not parse metadata from Stripe session:", session.id);
       return;
@@ -160,7 +206,6 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
     const orderName = await createShopifyOrder(
       items,
       customer,
-      currency,
       session.id,
       shipping,
       shippingHandle,
@@ -169,15 +214,14 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
     );
     console.log(
       `✅ Shopify order ${orderName} created for Stripe session ${session.id}`,
-      shipping > 0 ? `shipping=${shipping.toFixed(2)}` : "",
+      shipping > 0       ? `shipping=${shipping.toFixed(2)} AED`       : "",
+      discountAmount > 0 ? `discount=${discountAmount.toFixed(2)} AED` : "",
     );
     if (token) markTokenUsed(token);
   } catch (err) {
     console.error("Failed to create Shopify order after Stripe payment:", err);
   }
 }
-
- 
 
 async function handlePaymentFailed(session: Stripe.Checkout.Session) {
   console.warn("❌ Payment failed:", {

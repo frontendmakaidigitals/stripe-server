@@ -24,12 +24,16 @@ export async function POST(request: NextRequest) {
       currency = "aed",
       customer,
       token,
-      shipping,
+      shipping,          // display currency — used for Stripe line item only
       shippingHandle,
       discountCode,
-      discountAmount,
+      discountAmount,    // display currency — used for Stripe coupon only
       discountType,
       cancelUrl,
+      // ↓ AED values forwarded to the webhook for Shopify order creation
+      aedToBase,
+      shippingAED,
+      discountAmountAED,
     }: {
       items: CartItem[];
       currency: string;
@@ -41,6 +45,9 @@ export async function POST(request: NextRequest) {
       discountAmount?: number;
       discountType?: "percentage" | "fixed" | null;
       cancelUrl?: string;
+      aedToBase?: number;
+      shippingAED?: number;
+      discountAmountAED?: number;
     } = body;
 
     if (!items?.length) {
@@ -53,6 +60,7 @@ export async function POST(request: NextRequest) {
     const curr = currency.toLowerCase();
     const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
 
+    // ── Line items (display currency for Stripe) ────────────────────────────
     const lineItems = items.map((item) => ({
       price_data: {
         currency: curr,
@@ -65,7 +73,7 @@ export async function POST(request: NextRequest) {
       quantity: item.quantity,
     }));
 
-    // Shipping as a line item
+    // Shipping as a line item (display currency)
     if (shipping && shipping > 0) {
       lineItems.push({
         price_data: {
@@ -80,16 +88,16 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Build coupon — always use amount_off (pre-calculated on frontend)
+    // ── Coupon (display currency, amount already pre-calculated) ───────────
     let discounts: { coupon: string }[] | undefined;
     if (discountCode && discountAmount && discountAmount > 0) {
       try {
         const amountOffCents = Math.round(discountAmount * 100);
         const coupon = await stripe.coupons.create({
-          name: discountCode.toUpperCase(),
-          amount_off: amountOffCents,
-          currency: curr,
-          duration: "once",
+          name:            discountCode.toUpperCase(),
+          amount_off:      amountOffCents,
+          currency:        curr,
+          duration:        "once",
           max_redemptions: 1,
         });
         discounts = [{ coupon: coupon.id }];
@@ -101,25 +109,30 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ── Session metadata — everything the webhook needs ────────────────────
+    // All monetary values sent to the webhook are in AED so the Shopify order
+    // is always created in AED, identical to the COD flow.
     const session = await stripe.checkout.sessions.create({
-      mode: "payment",
+      mode:                 "payment",
       payment_method_types: ["card"],
-      customer_email: customer?.email || undefined,
-      line_items: lineItems,
+      customer_email:       customer?.email || undefined,
+      line_items:           lineItems,
       ...(discounts
         ? { discounts }
         : { allow_promotion_codes: false }),
       success_url: `${baseUrl}/success`,
-      cancel_url: cancelUrl ?? `${baseUrl}/checkout${token ? `?token=${token}` : ""}`,
+      cancel_url:  cancelUrl ?? `${baseUrl}/checkout${token ? `?token=${token}` : ""}`,
       metadata: {
-        token:          token || "",
-        customerName:   (customer?.name  || "").slice(0, 100),
-        customerEmail:  (customer?.email || "").slice(0, 100),
-        currency,
-        shipping:       (shipping ?? 0).toFixed(2),        // ← for webhook
-        shippingHandle: shippingHandle || "Shipping",       // ← for webhook
-        discountCode:   discountCode   || "",               // ← single, clean
-        discountAmount: (discountAmount ?? 0).toFixed(2),   // ← safe, no crash
+        token:             token              || "",
+        customerName:      (customer?.name    || "").slice(0, 100),
+        customerEmail:     (customer?.email   || "").slice(0, 100),
+        // Always AED for Shopify order creation in the webhook
+        currency:          "AED",
+        aedToBase:         (aedToBase         ?? 1).toString(),
+        shipping:          (shippingAED       ?? 0).toFixed(2),
+        shippingHandle:    shippingHandle     || "Shipping",
+        discountCode:      discountCode       || "",
+        discountAmount:    (discountAmountAED ?? 0).toFixed(2),
       },
     });
 

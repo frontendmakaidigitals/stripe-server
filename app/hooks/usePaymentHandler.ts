@@ -12,7 +12,7 @@ interface UsePaymentHandlersOptions {
   selectedRate: ShippingRate | null;
   discountResult: DiscountResult;
   discountAmount: number;
-  aedToBase: number; // ← add this so we can convert back to AED
+  aedToBase: number;
   setLoading: (v: boolean) => void;
   setError: (v: string) => void;
   setOrderId: (v: string) => void;
@@ -49,6 +49,10 @@ export function usePaymentHandlers({
     setLoading(true);
     setError("");
     try {
+      // discountAmount is in display currency — convert to AED for the webhook
+      const discountAmountAED =
+        aedToBase > 0 ? discountAmount / aedToBase : discountAmount;
+
       const res = await fetch("/api/stripe/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -56,10 +60,14 @@ export function usePaymentHandlers({
           items,
           currency,
           customer,
-          token:          payload.token,
-          shipping:       shippingCost,
-          shippingHandle: selectedRate?.handle,
-          cancelUrl:      window.location.href,
+          token:             payload.token,
+          shipping:          shippingCost,       // display currency, for Stripe line item
+          shippingHandle:    selectedRate?.handle,
+          cancelUrl:         window.location.href,
+          // ↓ AED values so the webhook can create the Shopify order identically to COD
+          aedToBase,
+          shippingAED:       shippingCostAED,
+          discountAmountAED,
           ...discountPayload,
         }),
       });
@@ -129,17 +137,11 @@ export function usePaymentHandlers({
     setLoading(true);
     setError("");
     try {
-      // ✅ Convert item prices back to AED before sending to Shopify.
-      // items[].price is in the display currency (e.g. USD, EUR).
-      // Shopify order must always be in AED so the email shows AED prices.
-      // aedToBase = how many display-currency units = 1 AED
-      // so: displayPrice / aedToBase = AED price
       const itemsInAED = items.map((item) => ({
         ...item,
         price: aedToBase > 0 ? item.price / aedToBase : item.price,
       }));
 
-      // discountAmount is also in display currency — convert to AED
       const discountAmountAED =
         aedToBase > 0 ? discountAmount / aedToBase : discountAmount;
 
@@ -147,15 +149,15 @@ export function usePaymentHandlers({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items:          itemsInAED,   // ✅ AED prices
-          currency:       "AED",        // ✅ always AED for Shopify order
+          items:          itemsInAED,
+          currency:       "AED",
           customer,
           token:          payload.token,
-          shipping:       shippingCostAED,  // ✅ already AED
-          codFee:         codFeeAED,        // ✅ already AED
+          shipping:       shippingCostAED,
+          codFee:         codFeeAED,
           shippingHandle: selectedRate?.handle,
           ...discountPayload,
-          discountAmount: discountAmountAED, // ✅ converted to AED
+          discountAmount: discountAmountAED,
         }),
       });
       const data = await res.json();
