@@ -35,8 +35,10 @@ countriesLib.registerLocale(en);
 
 export default function CheckoutClient({
   payload,
+  rawToken
 }: {
   payload: CheckoutPayload;
+  rawToken: string;
 }) {
   const { items, currency, total, customer: prefill } = payload;
   const isLoggedIn = Boolean(prefill.email);
@@ -143,6 +145,7 @@ export default function CheckoutClient({
     setOrderId,
     setStep,
     aedToBase,
+    rawToken
   });
 
   async function handleApplyDiscount(code: string) {
