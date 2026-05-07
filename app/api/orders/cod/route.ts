@@ -57,13 +57,7 @@ const lineItems: object[] = items.map((item) => {
     price: grossPrice.toFixed(2),
     quantity: item.quantity,
     requires_shipping: true,
-    // CRITICAL: Set to false so Shopify doesn't re-calculate
-    taxable: false, 
-    tax_lines: isUAE ? [{
-      title: "VAT",
-      rate: 0.05,
-      price: totalLineVat.toFixed(2)
-    }] : []
+    taxable: true, 
   };
 });
 
@@ -75,12 +69,7 @@ if (codFee > 0) {
     price: codFee.toFixed(2),
     quantity: 1,
     requires_shipping: false,
-    taxable: false, // Set to false
-    tax_lines: isUAE ? [{
-      title: "VAT",
-      rate: 0.05,
-      price: codVat.toFixed(2)
-    }] : []
+    taxable: true
   });
 }
 
@@ -104,17 +93,12 @@ if (codFee > 0) {
           tags:             "COD, custom-checkout",
           send_receipt:     false,
           ...(shipping > 0 && {
-  shipping_line: {
-    title: shippingHandle,
-    price: shipping.toFixed(2), // Use full 35.00
-    taxable: false, // Set to false
-    tax_lines: isUAE ? [{
-      title: "VAT",
-      rate: 0.05,
-      price: (shipping * 0.05 / 1.05).toFixed(2)
-    }] : []
-  },
-}),
+              shipping_line: {
+                title: shippingHandle,
+                price: shipping.toFixed(2), // Use full 35.00
+                taxable: true, // Set to false
+              },
+            }),
           // ← use fixed_amount when we have the computed amount
           // ← fall back to discount_code lookup when amount is 0
           ...(discountCode && discountAmount > 0
