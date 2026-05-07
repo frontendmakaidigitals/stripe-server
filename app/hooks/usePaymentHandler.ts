@@ -82,29 +82,31 @@ export function usePaymentHandlers({
 
   // ── Tabby ────────────────────────────────────────────────────────────────
   async function startTabby(customer: CustomerInfo) {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/tabby/create-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          currency,
-          customer,
-          token:     payload.token,
-          shipping:  shippingCost,
-          cancelUrl: window.location.href,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Tabby checkout failed");
-      window.location.href = data.url;
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-      setLoading(false);
-    }
+  setLoading(true);
+  setError("");
+  try {
+    const res = await fetch("/api/tabby/create-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items,
+        currency,
+        customer,
+        token:          payload.token,
+        shipping:       shippingCost,
+        shippingHandle: selectedRate?.handle,   // ← add
+        cancelUrl:      window.location.href,
+        ...discountPayload,                      // ← add (discountCode, discountAmount, discountType)
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Tabby checkout failed");
+    window.location.href = data.url;
+  } catch (err: unknown) {
+    setError(err instanceof Error ? err.message : "Something went wrong");
+    setLoading(false);
   }
+}
 
   // ── Tamara ───────────────────────────────────────────────────────────────
   async function startTamara(customer: CustomerInfo) {
