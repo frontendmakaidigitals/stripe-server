@@ -48,33 +48,44 @@ async function createShopifyOrder(
   };
 
 const lineItems: object[] = items.map((item) => {
-  const priceExVat = (item.price / 1.05);
-  const vatAmount = (item.price * item.quantity * 0.05 / 1.05);
+  // 1. Full price as seen by the customer
+  const grossPrice = item.price; 
+  
+  // 2. VAT Amount (Inclusive): (Price * Qty * 0.05) / 1.05
+  // Example: (566.50 * 1 * 0.05) / 1.05 = 26.98
+  const totalLineVat = (grossPrice * item.quantity * 0.05) / 1.05;
   
   return {
     title:             item.product_title,
     sku:               item.sku || item.variant_id || "",
-    price:             priceExVat.toFixed(2),  // ← ex-VAT price
+    price:             grossPrice.toFixed(2), // Use FULL price (566.50)
     quantity:          item.quantity,
     requires_shipping: true,
     taxable:           isUAE,
     tax_lines: isUAE ? [{
       title: "VAT",
       rate:  0.05,
-      price: vatAmount.toFixed(2)
+      price: totalLineVat.toFixed(2) // This tells Shopify exactly how much of the 566.50 is tax
     }] : []
   };
 });
 
-  if (codFee > 0) {
-    lineItems.push({
-      title:             "COD (incl. VAT)",
-      price:             codFee.toFixed(2),
-      quantity:          1,
-      requires_shipping: false,
-      taxable:           false,
-    });
-  }
+// Fix for COD Fee - it should also have tax_lines if it's inclusive!
+if (codFee > 0) {
+  const codVat = (codFee * 0.05) / 1.05;
+  lineItems.push({
+    title:             "COD (incl. VAT)",
+    price:             codFee.toFixed(2),
+    quantity:          1,
+    requires_shipping: false,
+    taxable:           isUAE,
+    tax_lines: isUAE ? [{
+      title: "VAT",
+      rate: 0.05,
+      price: codVat.toFixed(2)
+    }] : []
+  });
+}
 
   const draftRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders.json`,
