@@ -2,9 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import type { CartItem, CustomerInfo } from "@/types/checkout.types";
 
-import { verifyCheckoutToken } from "@/app/lib/checkout-token";
-import { markTokenUsed } from "@/app/lib/used-tokens";
-
 export const runtime = "nodejs";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -46,16 +43,13 @@ async function createShopifyOrder(
     phone:      customer.phone    || "",
   };
 
-  // All prices are AED (pre-converted by the frontend before being stored in
-  // metadata / the checkout token). taxes_included: true so Shopify back-
-  // calculates VAT correctly — identical to the COD flow.
   const lineItems: object[] = items.map((item) => ({
     title:             item.product_title,
     sku:               item.sku || item.variant_id || "",
-    price:             item.price.toFixed(2),   // AED, VAT-inclusive
+    price:             item.price.toFixed(2),  // AED, VAT-inclusive
     quantity:          item.quantity,
     requires_shipping: true,
-    taxable:           true,                    // ✅ back-calculate VAT from inclusive price
+    taxable:           true,
   }));
 
   const draftRes = await fetch(
@@ -68,25 +62,24 @@ async function createShopifyOrder(
       },
       body: JSON.stringify({
         draft_order: {
-          line_items:     lineItems,
-          email:          customer.email,
+          line_items:       lineItems,
+          email:            customer.email,
           shipping_address: address,
           billing_address:  address,
-          tax_exempt:     !isUAE,
-          taxes_included: true,                 // ✅ prices are VAT-inclusive
-          note:           `Paid via Stripe. Session: ${stripeSessionId}`,
-          tags:           "Stripe, custom-checkout",
-          send_receipt:   true,
+          tax_exempt:       !isUAE,
+          taxes_included:   true,
+          note:             `Paid via Stripe. Session: ${stripeSessionId}`,
+          tags:             "Stripe, custom-checkout",
+          send_receipt:     true,
 
           ...(shipping > 0 && {
             shipping_line: {
               title:   shippingHandle,
-              price:   shipping.toFixed(2),     // AED, VAT-inclusive
+              price:   shipping.toFixed(2),
               taxable: true,
             },
           }),
 
-          // Mirror COD discount structure exactly
           ...(discountCode && discountAmount > 0
             ? {
                 applied_discount: {
@@ -135,7 +128,6 @@ async function createShopifyOrder(
 
   const draft = draftJson.draft_order;
 
-  // payment_pending=false because Stripe already captured the payment
   const completeRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders/${draft.id}/complete.json?payment_pending=false`,
     {
@@ -158,44 +150,75 @@ async function createShopifyOrder(
 
 async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
   const meta           = session.metadata ?? {};
-  const token          = meta.token;
-  // All monetary metadata is stored in AED (set by create-checkout)
-  const aedToBase      = parseFloat(meta.aedToBase      || "1");
-  const shipping       = parseFloat(meta.shipping       || "0");   // AED
-  const shippingHandle = meta.shippingHandle || "Shipping";
-  const discountCode   = meta.discountCode   || undefined;
-  const discountAmount = parseFloat(meta.discountAmount || "0");   // AED
+  const aedToBase      = parseFloat(meta.aedToBase   || "1") || 1;
+  const shipping       = parseFloat(meta.shippingAED || "0");
+  const shippingHandle = meta.shippingHandle    || "Shipping";
+  const discountCode   = meta.discountCode      || undefined;
+  const discountAmount = parseFloat(meta.discountAmountAED || "0");
 
-  let customer: CustomerInfo;
-  let items: CartItem[];
-
-  if (token) {
+  // ── Expand the session to get line items + customer_details ───────────
+  console.log(`[Webhook] Expanding session ${session.id}...`);
+  let expanded: Stripe.Checkout.Session;
   try {
-    const payload = await verifyCheckoutToken(token);
-    customer = payload.customer;
-    items    = payload.items ?? [];
-    console.log(`[Webhook] Token verified. Items: ${items.length}, Customer: ${payload.customer?.email}`);
+    expanded = await stripe.checkout.sessions.retrieve(session.id, {
+      expand: ["line_items.data.price.product", "customer_details"],
+    });
   } catch (err) {
-    console.error("Could not verify checkout token:", err);
+    console.error("[Webhook] Could not expand Stripe session:", err);
     return;
   }
-} else {
-    try {
-      const rawItems: CartItem[] = JSON.parse(meta.items || "[]");
-      customer = JSON.parse(meta.customer || "{}");
-      // Same conversion for the fallback metadata path
-      items = rawItems.map((item) => ({
-        ...item,
-        price: aedToBase > 0 ? item.price / aedToBase : item.price,
-      }));
-    } catch {
-      console.error("Could not parse metadata from Stripe session:", session.id);
-      return;
-    }
-  }
+
+  // ── Build customer from session data + metadata phone ─────────────────
+  const details  = expanded.customer_details;
+  const addr     = details?.address;
+  const countryCode = addr?.country || "AE";
+  const customer: CustomerInfo = {
+    id:          "",
+    name:        details?.name  || meta.customerName  || "Guest",
+    email:       details?.email || session.customer_email || meta.customerEmail || "",
+    phone:       details?.phone || meta.customerPhone  || "",
+    address:     addr?.line1    || "",
+    address2:    addr?.line2    || meta.customerAddress2 || "",
+    city:        addr?.city     || "",
+    province:    addr?.state    || "",
+    zip:         addr?.postal_code || "",
+    country:     countryCode,
+    countryCode,
+    addresses:   [],
+  };
+
+  // ── Build cart items from Stripe line items, converting to AED ────────
+  const shippingLabel = (shippingHandle || "shipping").toLowerCase();
+  const items: CartItem[] = (expanded.line_items?.data ?? [])
+    .filter((li) => {
+      // Skip the shipping line item we added as a product
+      const name = (li.description ?? "").toLowerCase();
+      const sku  = (li.price?.product as Stripe.Product)?.metadata?.sku ?? "";
+      return name !== shippingLabel && sku !== "__shipping__";
+    })
+    .map((li) => {
+      const product = li.price?.product as Stripe.Product | undefined;
+      return {
+        product_title: li.description ?? "Product",
+        sku:           product?.metadata?.sku           || "",
+        variant_id:    product?.metadata?.variant_id    || "",
+        // unit_amount is in display-currency cents → convert to AED
+        price:         (li.price?.unit_amount ?? 0) / 100 / aedToBase,
+        quantity:      li.quantity ?? 1,
+        image:         "",
+      };
+    });
+
+  console.log(
+    `[Webhook] Session expanded. Items: ${items.length}, Customer: ${customer.email}`,
+    `aedToBase: ${aedToBase}`,
+  );
 
   if (!items.length) {
-    console.warn("No items found. Skipping Shopify order.");
+    console.error(
+      "[Webhook] ❌ No items after expanding session:", session.id,
+      "| line_items count:", expanded.line_items?.data?.length,
+    );
     return;
   }
 
@@ -214,7 +237,6 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
       shipping > 0       ? `shipping=${shipping.toFixed(2)} AED`       : "",
       discountAmount > 0 ? `discount=${discountAmount.toFixed(2)} AED` : "",
     );
-    if (token) markTokenUsed(token);
   } catch (err) {
     console.error("Failed to create Shopify order after Stripe payment:", err);
   }
