@@ -6,6 +6,7 @@ interface UsePaymentHandlersOptions {
   items: CheckoutPayload["items"];
   currency: string;
   payload: CheckoutPayload;
+  rawToken: string;        // ← the raw JWT string from the URL (not payload.token)
   shippingCost: number;
   shippingCostAED: number;
   codFeeAED: number;
@@ -23,6 +24,7 @@ export function usePaymentHandlers({
   items,
   currency,
   payload,
+  rawToken,               // ← use this everywhere instead of payload.token
   shippingCost,
   shippingCostAED,
   codFeeAED,
@@ -49,7 +51,6 @@ export function usePaymentHandlers({
     setLoading(true);
     setError("");
     try {
-      // discountAmount is in display currency — convert to AED for the webhook
       const discountAmountAED =
         aedToBase > 0 ? discountAmount / aedToBase : discountAmount;
 
@@ -60,11 +61,10 @@ export function usePaymentHandlers({
           items,
           currency,
           customer,
-          token:             payload.token,
-          shipping:          shippingCost,       // display currency, for Stripe line item
+          token:             rawToken,          // ← raw JWT, not payload.token
+          shipping:          shippingCost,
           shippingHandle:    selectedRate?.handle,
           cancelUrl:         window.location.href,
-          // ↓ AED values so the webhook can create the Shopify order identically to COD
           aedToBase,
           shippingAED:       shippingCostAED,
           discountAmountAED,
@@ -92,7 +92,7 @@ export function usePaymentHandlers({
           items,
           currency,
           customer,
-          token:     payload.token,
+          token:     rawToken,                  // ← raw JWT
           shipping:  shippingCost,
           cancelUrl: window.location.href,
         }),
@@ -118,7 +118,7 @@ export function usePaymentHandlers({
           items,
           currency,
           customer,
-          token:     payload.token,
+          token:     rawToken,                  // ← raw JWT
           shipping:  shippingCost,
           cancelUrl: window.location.href,
         }),
@@ -152,7 +152,7 @@ export function usePaymentHandlers({
           items:          itemsInAED,
           currency:       "AED",
           customer,
-          token:          payload.token,
+          token:          rawToken,             // ← raw JWT
           shipping:       shippingCostAED,
           codFee:         codFeeAED,
           shippingHandle: selectedRate?.handle,
