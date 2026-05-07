@@ -54,6 +54,12 @@ async function createShopifyOrder(
     quantity:          item.quantity,
     requires_shipping: true,
     taxable:           isUAE,
+
+  tax_lines: isUAE ? [{
+    title: "VAT",
+    rate:  0.05,
+    price: (item.price * item.quantity * 0.05 / 1.05).toFixed(2)
+  }] : []
   }));
 
   if (codFee > 0) {
