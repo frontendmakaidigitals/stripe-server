@@ -3,7 +3,7 @@
 import { CheckoutPayload } from "@/types/checkout.types";
 
 export const dummyPayload: CheckoutPayload = {
-  currency: "aed",
+  currency: "SAR",
   total: 12000, // cents (important based on your type)
 
   shop: "yourstore.myshopify.com",

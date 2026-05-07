@@ -63,7 +63,6 @@ export function usePaymentHandlers({
           shipping:          shippingCost,       // display currency, for Stripe line item
           shippingHandle:    selectedRate?.handle,
           cancelUrl:         window.location.href,
-          // ↓ AED values so the webhook can create the Shopify order identically to COD
           aedToBase,
           shippingAED:       shippingCostAED,
           discountAmountAED,
@@ -84,12 +83,7 @@ async function startTabby(customer: CustomerInfo) {
   setLoading(true);
   setError("");
   try {
-    // Convert to AED — same as COD
-    const itemsInAED = items.map((item) => ({
-      ...item,
-      price: aedToBase > 0 ? item.price / aedToBase : item.price,
-    }));
-
+  
     const discountAmountAED =
       aedToBase > 0 ? discountAmount / aedToBase : discountAmount;
 
@@ -97,8 +91,8 @@ async function startTabby(customer: CustomerInfo) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        items:          itemsInAED,          // ← AED (was display currency)
-        currency:       "AED",               // ← hardcoded AED (was display currency)
+        items,          // ← AED (was display currency)
+        currency,
         customer,
         token:          payload.token,
         shipping:       shippingCostAED,     // ← AED (was shippingCost in display currency)

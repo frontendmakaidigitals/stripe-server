@@ -284,14 +284,8 @@ export async function POST(request: NextRequest) {
       referenceId,
     );
 
-    console.log("[Tabby webhook] Payment ID:", body.id);
-    console.log("[Tabby webhook] Status:", body.status);
-    console.log("[Tabby webhook] Captures:", JSON.stringify(body.captures));
-    console.log("[Tabby webhook] closed_at:", body.closed_at);
-    console.log("[Tabby webhook] meta:", JSON.stringify(body.meta));
-    console.log("[Tabby webhook] order:", JSON.stringify(body.order));
 
-    const orderName = await createShopifyOrder(
+    await createShopifyOrder(
       checkoutPayload.items,
       checkoutPayload.customer,
       tabbyPaymentId,
@@ -304,9 +298,6 @@ export async function POST(request: NextRequest) {
     if (jwtToken) await markTokenUsed(jwtToken);
     if (referenceId) await redis.del(`tabby_checkout:${referenceId}`);
 
-    console.log(
-      `[Tabby webhook] ✅ Order created: ${orderName} | Payment: ${tabbyPaymentId} | Currency: ${currency}`,
-    );
   } catch (err) {
     await redis.del(idempotencyKey);
     console.error(
