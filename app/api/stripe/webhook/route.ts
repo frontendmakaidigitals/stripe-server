@@ -170,19 +170,16 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
   let items: CartItem[];
 
   if (token) {
-    try {
-      const payload = await verifyCheckoutToken(token);
-      customer = payload.customer;
-      // Token items are in display currency — convert to AED
-      items = payload.items.map((item) => ({
-        ...item,
-        price: aedToBase > 0 ? item.price / aedToBase : item.price,
-      }));
-    } catch (err) {
-      console.error("Could not verify checkout token:", err);
-      return;
-    }
-  } else {
+  try {
+    const payload = await verifyCheckoutToken(token);
+    customer = payload.customer;
+    items    = payload.items ?? [];
+    console.log(`[Webhook] Token verified. Items: ${items.length}, Customer: ${payload.customer?.email}`);
+  } catch (err) {
+    console.error("Could not verify checkout token:", err);
+    return;
+  }
+} else {
     try {
       const rawItems: CartItem[] = JSON.parse(meta.items || "[]");
       customer = JSON.parse(meta.customer || "{}");
