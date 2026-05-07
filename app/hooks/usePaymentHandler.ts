@@ -49,7 +49,6 @@ export function usePaymentHandlers({
     setLoading(true);
     setError("");
     try {
-      // discountAmount is in display currency — convert to AED for the webhook
       const discountAmountAED =
         aedToBase > 0 ? discountAmount / aedToBase : discountAmount;
 
@@ -81,22 +80,32 @@ export function usePaymentHandlers({
   }
 
   // ── Tabby ────────────────────────────────────────────────────────────────
-  async function startTabby(customer: CustomerInfo) {
+async function startTabby(customer: CustomerInfo) {
   setLoading(true);
   setError("");
   try {
+    // Convert to AED — same as COD
+    const itemsInAED = items.map((item) => ({
+      ...item,
+      price: aedToBase > 0 ? item.price / aedToBase : item.price,
+    }));
+
+    const discountAmountAED =
+      aedToBase > 0 ? discountAmount / aedToBase : discountAmount;
+
     const res = await fetch("/api/tabby/create-session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        items,
-        currency,
+        items:          itemsInAED,          // ← AED (was display currency)
+        currency:       "AED",               // ← hardcoded AED (was display currency)
         customer,
         token:          payload.token,
-        shipping:       shippingCost,
-        shippingHandle: selectedRate?.handle,   // ← add
+        shipping:       shippingCostAED,     // ← AED (was shippingCost in display currency)
+        shippingHandle: selectedRate?.handle,
         cancelUrl:      window.location.href,
-        ...discountPayload,                      // ← add (discountCode, discountAmount, discountType)
+        ...discountPayload,
+        discountAmount: discountAmountAED,   // ← AED (was display currency from spread)
       }),
     });
     const data = await res.json();

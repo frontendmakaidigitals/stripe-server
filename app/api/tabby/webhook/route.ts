@@ -98,7 +98,6 @@ async function captureTabbyPayment(
 async function createShopifyOrder(
   items: CartItem[],
   customer: CustomerInfo,
-  currency: string,
   tabbyPaymentId: string,
   shipping: number = 0,
   shippingHandle: string = "Shipping",
@@ -146,12 +145,13 @@ async function createShopifyOrder(
     note:             `Paid via Tabby. Payment ID: ${tabbyPaymentId}`,
     tags:             "Tabby, BNPL, custom-checkout",
     send_receipt:     true,
-    currency,
+    taxes_included:   true,  
     ...(shipping > 0 && {
       shipping_line: {
         title: shippingHandle,
         price: shipping.toFixed(2),
         code:  "TABBY_SHIPPING",
+        taxable: true,
       },
     }),
     ...(discountCode && discountAmount > 0 && {
@@ -161,6 +161,7 @@ async function createShopifyOrder(
         amount:      discountAmount.toFixed(2),  // ← add this
         title:       discountCode,
         description: `Discount code: ${discountCode}`,
+        taxable: true,
       },
     }),
   };
@@ -293,7 +294,6 @@ export async function POST(request: NextRequest) {
     const orderName = await createShopifyOrder(
       checkoutPayload.items,
       checkoutPayload.customer,
-      currency,
       tabbyPaymentId,
       checkoutPayload.shipping ?? 0,
       checkoutPayload.shippingHandle ?? "Shipping", // ← added
