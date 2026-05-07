@@ -83,7 +83,11 @@ async function startTabby(customer: CustomerInfo) {
   setLoading(true);
   setError("");
   try {
-  
+    const itemsInAED = items.map((item) => ({
+      ...item,
+      price: aedToBase > 0 ? item.price / aedToBase : item.price,
+    }));
+
     const discountAmountAED =
       aedToBase > 0 ? discountAmount / aedToBase : discountAmount;
 
@@ -91,15 +95,19 @@ async function startTabby(customer: CustomerInfo) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        items,          // ← AED (was display currency)
-        currency,
+        items:          itemsInAED,          // ← AED prices for Shopify
+        currency,                            // ← display currency (SAR/KWD/AED) for Tabby routing
         customer,
         token:          payload.token,
-        shipping:       shippingCostAED,     // ← AED (was shippingCost in display currency)
+        shipping:       shippingCostAED,     // ← AED for Shopify
         shippingHandle: selectedRate?.handle,
         cancelUrl:      window.location.href,
         ...discountPayload,
-        discountAmount: discountAmountAED,   // ← AED (was display currency from spread)
+        discountAmount: discountAmountAED,   // ← AED for Shopify
+        // Pass display-currency values separately so Tabby session amount is correct
+        shippingDisplay:  shippingCost,         // ← display currency for Tabby amount calc
+        discountDisplay:  discountAmount,        // ← display currency for Tabby amount calc
+        itemsDisplay:     items,                 // ← display currency for Tabby amount calc
       }),
     });
     const data = await res.json();

@@ -25,15 +25,19 @@ export async function OPTIONS() {
 export async function POST(request: NextRequest) {
   try {
     const {
-      items,
+      items,            // AED prices — stored in Redis for Shopify webhook
       customer,
-      currency = "AED",
+      currency = "AED", // display currency (SAR/KWD/AED) — used for Tabby routing
       token,
       cancelUrl,
-      shipping = 0,
+      shipping = 0,           // AED — stored in Redis for Shopify webhook
       shippingHandle = "Shipping",
-      discountAmount = 0,
+      discountAmount = 0,     // AED — stored in Redis for Shopify webhook
       discountCode,
+      // Display currency values — used for Tabby session amount/items only
+      shippingDisplay,
+      discountDisplay,
+      itemsDisplay,
     } = (await request.json()) as {
       items: CartItem[];
       customer: CustomerInfo;
@@ -44,6 +48,9 @@ export async function POST(request: NextRequest) {
       shippingHandle?: string;
       discountAmount?: number;
       discountCode?: string;
+      shippingDisplay?: number;
+      discountDisplay?: number;
+      itemsDisplay?: CartItem[];
     };
 
     if (!items?.length) {
@@ -58,6 +65,7 @@ export async function POST(request: NextRequest) {
       customer.country?.toUpperCase()?.slice(0, 2) ||
       "";
 
+    // Region resolved from display currency — so SAR/KWD routes correctly
     const region = getTabbyRegion(currency, countryCode);
 
     if (!region) {
@@ -81,25 +89,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-    const total = subtotal + shipping;
+    // Use display currency items/shipping/discount for Tabby session amount
+    // Falls back to AED values if display values not provided (AED customers)
+    const displayItems   = itemsDisplay   ?? items;
+    const displayShipping  = shippingDisplay  ?? shipping;
+    const displayDiscount  = discountDisplay  ?? discountAmount;
 
-    if (!isTabbyAvailable(total, region.currency)) {
+    const subtotalDisplay = displayItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+    const totalDisplay    = Math.max(0, subtotalDisplay + displayShipping - displayDiscount);
+
+    if (!isTabbyAvailable(totalDisplay, region.currency)) {
       return NextResponse.json(
         {
-          error: `Order total ${total.toFixed(2)} ${region.currency} is outside Tabby's supported range for this region.`,
+          error: `Order total ${totalDisplay.toFixed(2)} ${region.currency} is outside Tabby's supported range for this region.`,
         },
         { status: 422, headers: CORS_HEADERS },
       );
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
+    const baseUrl     = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
     const referenceId = `order_${Date.now()}`;
 
     const payload = {
       payment: {
-        amount: total.toFixed(2),
-        currency: region.currency,
+        amount:      totalDisplay.toFixed(2),    // ← display currency amount for Tabby
+        currency:    region.currency,
         description: `Order from ${process.env.NEXT_PUBLIC_STORE_NAME || "Store"}`,
         buyer: {
           email: customer.email || "",
@@ -114,20 +128,20 @@ export async function POST(request: NextRequest) {
         },
         order: {
           reference_id: referenceId,
-          items: items.map((item) => ({
+          items: displayItems.map((item) => ({   // ← display currency items for Tabby
             title:      item.product_title,
             quantity:   item.quantity,
             unit_price: item.price.toFixed(2),
             category:   item.variant_id,
           })),
         },
-        ...(shipping > 0 && {
-          shipping_amount: shipping.toFixed(2),
+        ...(displayShipping > 0 && {
+          shipping_amount: displayShipping.toFixed(2),  // ← display currency for Tabby
         }),
         order_history: [],
         buyer_history: {
           registered_since: new Date().toISOString(),
-          loyalty_level: 0,
+          loyalty_level:    0,
         },
       },
       merchant_code: merchantCode,
@@ -152,11 +166,11 @@ export async function POST(request: NextRequest) {
           : process.env.TABBY_PUBLIC_API_KEY_KWD;
 
     console.log("[Tabby] Calling API:", {
-      url:          `${region.apiBase}/api/v2/checkout`,
-      currency:     region.currency,
-      apiKeyPrefix: apiKey?.slice(0, 15),
+      url:            `${region.apiBase}/api/v2/checkout`,
+      currency:       region.currency,
+      apiKeyPrefix:   apiKey?.slice(0, 15),
       merchantCode,
-      amount:       total.toFixed(2),
+      totalDisplay:   totalDisplay.toFixed(2),
       countryCode,
     });
 
@@ -192,18 +206,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Store full checkout payload in Redis for webhook to use
+    // Store AED values in Redis — webhook uses these to create Shopify order
     await redis.set(
       `tabby_checkout:${referenceId}`,
       JSON.stringify({
-        items,
+        items,           // ← AED prices
         customer,
-        currency:       region.currency,
-        shipping,
-        shippingHandle, // ← fixed: was missing
-        discountAmount, // ← fixed: was hardcoded 0
-        discountCode,   // ← fixed: was hardcoded undefined
-        token:          token || "",
+        currency:        "AED",   // ← always AED for Shopify
+        shipping,        // ← AED
+        shippingHandle,
+        discountAmount,  // ← AED
+        discountCode,
+        token:           token || "",
       }),
       { ex: 60 * 60 * 24 },
     );
