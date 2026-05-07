@@ -22,8 +22,8 @@ async function createShopifyOrder(
   stripeSessionId: string,
   shipping: number = 0,
   shippingHandle: string = "Shipping",
-  discountAmount: number = 0,   // ← add
-  discountCode?: string, 
+  discountAmount: number = 0,
+  discountCode?: string,
 ): Promise<string> {
   const domain = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN!;
   const token  = process.env.SHOPIFY_ACCESS_TOKEN!;
@@ -31,26 +31,31 @@ async function createShopifyOrder(
   const [firstName, ...rest] = (customer.name || "Guest").trim().split(" ");
   const lastName = rest.join(" ") || "-";
 
+  const isUAE =
+    customer.country?.trim().toLowerCase() === "united arab emirates" ||
+    customer.country?.trim().toUpperCase() === "AE";
+
   const address = {
     first_name: firstName,
     last_name:  lastName,
-    address1:   customer.address || "",
-    city:       customer.city    || "",
-    country:    customer.country || "AE",
-    phone:      customer.phone   || "",
+    address1:   customer.address  || "",
+    address2:   customer.address2 || "",
+    city:       customer.city     || "",
+    province:   customer.province || "",
+    zip:        customer.zip      || "",
+    country:    customer.country  || "AE",
+    phone:      customer.phone    || "",
   };
 
-  const lineItems = items.map((item) =>
-    item.variant_id
-      ? { variant_id: parseInt(item.variant_id, 10), quantity: item.quantity }
-      : {
-          title:             item.product_title,
-          price:             item.price.toFixed(2),
-          quantity:          item.quantity,
-          requires_shipping: true,
-          taxable:           false,
-        },
-  );
+  // Don't use variant_id — Shopify overrides price when variant_id present
+  const lineItems: object[] = items.map((item) => ({
+    title:             item.product_title,
+    sku:               item.sku || item.variant_id || "",
+    price:             item.price.toFixed(2),
+    quantity:          item.quantity,
+    requires_shipping: true,
+    taxable:           isUAE,
+  }));
 
   const draftRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders.json`,
@@ -66,24 +71,24 @@ async function createShopifyOrder(
           email:            customer.email,
           shipping_address: address,
           billing_address:  address,
+          tax_exempt:       !isUAE,
           note:             `Paid via Stripe. Session: ${stripeSessionId}`,
           tags:             "Stripe, custom-checkout",
           send_receipt:     true,
+          ...(shipping > 0 && {
+            shipping_line: {
+              title: shippingHandle,
+              price: shipping.toFixed(2),
+            },
+          }),
           ...(discountCode && discountAmount > 0 && {
-          applied_discount: {
-            title: discountCode,
-            value: discountAmount.toFixed(2),
-            value_type: "fixed_amount",
-            description: `Discount code: ${discountCode}`,
-          },}),
-          ...(shipping > 0
-            ? {
-                shipping_line: {
-                  title: shippingHandle,
-                  price: shipping.toFixed(2),
-                },
-              }
-            : {}),
+            applied_discount: {
+              title:       discountCode,
+              value:       discountAmount.toFixed(2),
+              value_type:  "fixed_amount",
+              description: `Discount code: ${discountCode}`,
+            },
+          }),
         },
       }),
     },
@@ -116,13 +121,13 @@ async function createShopifyOrder(
 }
 
 async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
-  const meta     = session.metadata ?? {};
-  const token    = meta.token;
-  const currency = meta.currency || "AED";
-
-  // Shipping info from Stripe session metadata
+  const meta           = session.metadata ?? {};
+  const token          = meta.token;
+  const currency       = meta.currency       || "AED";
   const shipping       = parseFloat(meta.shipping       || "0");
-  const shippingHandle = meta.shippingHandle             || "Shipping";
+  const shippingHandle = meta.shippingHandle || "Shipping";
+  const discountCode   = meta.discountCode   || undefined;
+  const discountAmount = parseFloat(meta.discountAmount || "0");
 
   let customer: CustomerInfo;
   let items: CartItem[];
@@ -159,6 +164,8 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
       session.id,
       shipping,
       shippingHandle,
+      discountAmount,
+      discountCode,
     );
     console.log(
       `✅ Shopify order ${orderName} created for Stripe session ${session.id}`,
@@ -169,6 +176,8 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
     console.error("Failed to create Shopify order after Stripe payment:", err);
   }
 }
+
+ 
 
 async function handlePaymentFailed(session: Stripe.Checkout.Session) {
   console.warn("❌ Payment failed:", {

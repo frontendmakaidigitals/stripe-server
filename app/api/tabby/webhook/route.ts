@@ -101,7 +101,7 @@ async function createShopifyOrder(
   currency: string,
   tabbyPaymentId: string,
   shipping: number = 0,
-  shippingHandle: string = "Shipping", // ← added
+  shippingHandle: string = "Shipping",
   discountAmount: number = 0,
   discountCode?: string,
 ): Promise<string> {
@@ -111,54 +111,57 @@ async function createShopifyOrder(
   const [firstName, ...rest] = (customer.name || "Guest").trim().split(" ");
   const lastName = rest.join(" ") || "-";
 
+  const isUAE =
+    customer.country?.trim().toLowerCase() === "united arab emirates" ||
+    customer.country?.trim().toUpperCase() === "AE";
+
   const address = {
     first_name: firstName,
-    last_name: lastName,
-    address1: customer.address || "",
-    city: customer.city || "",
-    country: customer.country || "AE",
-    phone: customer.phone || "",
+    last_name:  lastName,
+    address1:   customer.address  || "",
+    address2:   customer.address2 || "",
+    city:       customer.city     || "",
+    province:   customer.province || "",
+    zip:        customer.zip      || "",
+    country:    customer.country  || "AE",
+    phone:      customer.phone    || "",
   };
 
-  const lineItems = items.map((item) =>
-    item.variant_id
-      ? { variant_id: parseInt(item.variant_id, 10), quantity: item.quantity }
-      : {
-          title: item.product_title,
-          price: item.price.toFixed(2),
-          quantity: item.quantity,
-          requires_shipping: true,
-          taxable: false,
-        },
-  );
+  // Don't use variant_id — Shopify overrides price when variant_id present
+  const lineItems: object[] = items.map((item) => ({
+    title:             item.product_title,
+    sku:               item.sku || item.variant_id || "",
+    price:             item.price.toFixed(2),
+    quantity:          item.quantity,
+    requires_shipping: true,
+    taxable:           isUAE,
+  }));
 
   const draftBody: Record<string, unknown> = {
-    line_items: lineItems,
-    email: customer.email,
+    line_items:       lineItems,
+    email:            customer.email,
     shipping_address: address,
-    billing_address: address,
-    note: `Paid via Tabby. Payment ID: ${tabbyPaymentId}`,
-    tags: "Tabby, BNPL, custom-checkout",
-    send_receipt: true,
+    billing_address:  address,
+    tax_exempt:       !isUAE,
+    note:             `Paid via Tabby. Payment ID: ${tabbyPaymentId}`,
+    tags:             "Tabby, BNPL, custom-checkout",
+    send_receipt:     true,
     currency,
-    // Shipping line with dynamic title
     ...(shipping > 0 && {
       shipping_line: {
-        title: shippingHandle, // ← was hardcoded "Shipping"
+        title: shippingHandle,
         price: shipping.toFixed(2),
-        code: "TABBY_SHIPPING",
+        code:  "TABBY_SHIPPING",
       },
     }),
-    // Discount
-    ...(discountCode &&
-      discountAmount > 0 && {
-        applied_discount: {
-          title: discountCode,
-          value: discountAmount.toFixed(2),
-          value_type: "fixed_amount",
-          description: `Discount code: ${discountCode}`,
-        },
-      }),
+    ...(discountCode && discountAmount > 0 && {
+      applied_discount: {
+        title:       discountCode,
+        value:       discountAmount.toFixed(2),
+        value_type:  "fixed_amount",
+        description: `Discount code: ${discountCode}`,
+      },
+    }),
   };
 
   const draftRes = await fetch(

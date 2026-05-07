@@ -83,7 +83,8 @@ export interface CheckoutPayload {
   customer: CustomerInfo;
   shop: string;     
   token?:string ;
-    shipping?: number;           // shipping cost in the store currency
+  shipping?: number;           // shipping cost in the store currency
   discountAmount?: number;     // discount value (fixed amount, already calculated)
   discountCode?: string; 
+  shippingHandle?: string;
 }

@@ -34,6 +34,7 @@ jobs:
             echo "SHOPIFY_ACCESS_TOKEN=${{ secrets.SHOPIFY_ACCESS_TOKEN }}"
             echo "UPSTASH_REDIS_REST_TOKEN=${{ secrets.UPSTASH_REDIS_REST_TOKEN }}"
             echo "SHOPIFY_STOREFRONT_TOKEN=${{ secrets.SHOPIFY_STOREFRONT_TOKEN }}"
+            echo "NEXT_PUBLIC_SHOPIFY_STOREFRONT_TOKEN=${{ secrets.NEXT_PUBLIC_SHOPIFY_STOREFRONT_TOKEN }}"
             echo "TABBY_PUBLIC_API_KEY_AED=${{ secrets.TABBY_PUBLIC_API_KEY_AED }}"
             echo "TABBY_SECRET_KEY_AED=${{ secrets.TABBY_SECRET_KEY_AED }}"
             echo "TABBY_MERCHANT_KEY_AED=${{ secrets.TABBY_MERCHANT_KEY_AED }}"
@@ -46,6 +47,9 @@ jobs:
             echo "TABBY_SECRET_KEY_SAR=${{ secrets.TABBY_SECRET_KEY_SAR }}"
             echo "TABBY_MERCHANT_KEY_SAR=${{ secrets.TABBY_MERCHANT_KEY_SAR }}"
             echo "TABBY_WEBHOOK_SECRET_SAR=${{ secrets.TABBY_WEBHOOK_SECRET_SAR }}"
+            echo "TAMARA_API_URL=${{ vars.TAMARA_API_URL }}"
+            echo "TAMARA_API_KEY=${{ secrets.TAMARA_API_KEY }}"
+            echo "TAMARA_NOTIFICATION_TOKEN=${{ secrets.TAMARA_NOTIFICATION_TOKEN }}"
           } > .env
           cp .env .env.production
 
