@@ -11,7 +11,7 @@ interface CODRequest {
   shippingHandle?: string;
   codFee?: number;
   discountCode?: string;
-  discountAmount?: number; // ← already in interface
+  discountAmount?: number;
   discountType?: string | null;
 }
 
@@ -21,7 +21,7 @@ async function createShopifyOrder(
   currency: string,
   codFee: number = 0,
   discountCode?: string,
-  discountAmount: number = 0, // ← add
+  discountAmount: number = 0,
   shipping: number = 0,
   shippingHandle: string = "Shipping",
 ) {
@@ -35,43 +35,48 @@ async function createShopifyOrder(
     customer.country?.trim().toLowerCase() === "united arab emirates" ||
     customer.country?.trim().toUpperCase() === "AE";
 
+  const VAT_RATE = 0.05;
+
   const address = {
     first_name: firstName,
-    last_name:  lastName,
-    address1:   customer.address,
-    address2:   customer.address2 || "",
-    city:       customer.city,
-    province:   customer.province || "",
-    zip:        customer.zip      || "",
-    country:    customer.country  || "AE",
-    phone:      customer.phone,
+    last_name: lastName,
+    address1: customer.address,
+    address2: customer.address2 || "",
+    city: customer.city,
+    province: customer.province || "",
+    zip: customer.zip || "",
+    country: customer.country || "AE",
+    phone: customer.phone,
   };
 
-const lineItems: object[] = items.map((item) => {
-  const grossPrice = item.price; 
-  const totalLineVat = (grossPrice * item.quantity * 0.05) / 1.05;
-  
-  return {
-    title: item.product_title,
-    sku: item.sku || item.variant_id || "",
-    price: grossPrice.toFixed(2),
-    quantity: item.quantity,
-    requires_shipping: true,
-    taxable: true, 
-  };
-});
+  // ── Line items: strip VAT from gross price before sending ────────────────
+  // Prices coming in are VAT-inclusive (e.g. 566.50 incl. 5% VAT)
+  // We send ex-VAT price and let Shopify add tax (taxes_included: false)
+  const lineItems: object[] = items.map((item) => {
+    const exVatPrice = item.price / (1 + VAT_RATE); // 566.50 / 1.05 = 539.52
 
-// Same logic for COD Fee
-if (codFee > 0) {
-  const codVat = (codFee * 0.05) / 1.05;
-  lineItems.push({
-    title: "COD (incl. VAT)",
-    price: codFee.toFixed(2),
-    quantity: 1,
-    requires_shipping: false,
-    taxable: true
+    return {
+      title: item.product_title,
+      sku: item.sku || item.variant_id || "",
+      price: exVatPrice.toFixed(2),
+      quantity: item.quantity,
+      requires_shipping: true,
+      taxable: true, // Shopify adds 5% on top → arrives back at 566.50
+    };
   });
-}
+
+  // ── COD fee: strip VAT before sending ───────────────────────────────────
+  // e.g. 10.00 incl. VAT → send 9.52 ex-VAT → Shopify adds 5% → 10.00
+  if (codFee > 0) {
+    const exVatCodFee = codFee / (1 + VAT_RATE);
+    lineItems.push({
+      title: "COD Fee",
+      price: exVatCodFee.toFixed(2),
+      quantity: 1,
+      requires_shipping: false,
+      taxable: true,
+    });
+  }
 
   const draftRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders.json`,
@@ -79,49 +84,54 @@ if (codFee > 0) {
       method: "POST",
       headers: {
         "X-Shopify-Access-Token": token,
-        "Content-Type":           "application/json",
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         draft_order: {
-          line_items:       lineItems,
-          email:            customer.email,
+          line_items: lineItems,
+          email: customer.email,
           shipping_address: address,
-          billing_address:  address,
-          tax_exempt:       !isUAE,
-          taxes_included: true, 
-          note: `COD order — phone: ${customer.phone}${codFee > 0 ? ` | COD fee: ${codFee.toFixed(2)} ${currency}` : ""}`,
-          tags:             "COD, custom-checkout",
-          send_receipt:     false,
+          billing_address: address,
+          tax_exempt: !isUAE,
+          taxes_included: false, // ✅ FIXED: prices are ex-VAT, Shopify adds tax
+          note: `COD order — phone: ${customer.phone}${
+            codFee > 0 ? ` | COD fee: ${codFee.toFixed(2)} ${currency}` : ""
+          }`,
+          tags: "COD, custom-checkout",
+          send_receipt: false,
+
+          // ── Shipping: strip VAT before sending ──────────────────────────
+          // e.g. 35.00 incl. VAT → send 33.33 ex-VAT → Shopify adds 5% → 35.00
           ...(shipping > 0 && {
-              shipping_line: {
-                title: shippingHandle,
-                price: shipping.toFixed(2), // Use full 35.00
-                taxable: true, // Set to false
-              },
-            }),
-          // ← use fixed_amount when we have the computed amount
-          // ← fall back to discount_code lookup when amount is 0
+            shipping_line: {
+              title: shippingHandle,
+              price: (shipping / (1 + VAT_RATE)).toFixed(2), // ✅ ex-VAT
+              taxable: true, // Shopify adds 5% on top
+            },
+          }),
+
+          // ── Discount ─────────────────────────────────────────────────────
           ...(discountCode && discountAmount > 0
             ? {
                 applied_discount: {
-                  value_type:  "fixed_amount",
-                  value:       discountAmount.toFixed(2),
-                  amount:      discountAmount.toFixed(2),
-                  title:       discountCode,
+                  value_type: "fixed_amount",
+                  value: discountAmount.toFixed(2),
+                  amount: discountAmount.toFixed(2),
+                  title: discountCode,
                   description: `Discount code: ${discountCode}`,
                 },
               }
             : discountCode
-              ? {
-                  applied_discount: {
-                    value_type:       "percentage",
-                    value:            "0",
-                    title:            discountCode,
-                    description:      discountCode,
-                    application_type: "discount_code",
-                  },
-                }
-              : {}),
+            ? {
+                applied_discount: {
+                  value_type: "percentage",
+                  value: "0",
+                  title: discountCode,
+                  description: discountCode,
+                  application_type: "discount_code",
+                },
+              }
+            : {}),
         },
       }),
     },
@@ -134,15 +144,16 @@ if (codFee > 0) {
   }
 
   const draftJson = await draftRes.json();
+
   console.log("[COD] Shopify draft order totals:", {
-    total_price:      draftJson.draft_order?.total_price,
-    subtotal_price:   draftJson.draft_order?.subtotal_price,
-    total_tax:        draftJson.draft_order?.total_tax,
+    total_price: draftJson.draft_order?.total_price,
+    subtotal_price: draftJson.draft_order?.subtotal_price,
+    total_tax: draftJson.draft_order?.total_tax,
     applied_discount: draftJson.draft_order?.applied_discount,
     line_items: draftJson.draft_order?.line_items?.map((l: any) => ({
       title: l.title,
       price: l.price,
-      sku:   l.sku,
+      tax_lines: l.tax_lines,
     })),
   });
 
@@ -154,13 +165,16 @@ if (codFee > 0) {
       method: "PUT",
       headers: {
         "X-Shopify-Access-Token": token,
-        "Content-Type":           "application/json",
+        "Content-Type": "application/json",
       },
     },
   );
 
   if (!completeRes.ok) {
-    console.warn("Draft order created but completion failed. Draft ID:", draft.id);
+    console.warn(
+      "Draft order created but completion failed. Draft ID:",
+      draft.id,
+    );
     return { orderId: draft.name, numericId: draft.id };
   }
 
@@ -170,8 +184,8 @@ if (codFee > 0) {
     `✅ COD order created: ${completed.name}`,
     `customer=${customer.email}`,
     `total=${completed.total_price} ${currency}`,
-    codFee > 0      ? `codFee=${codFee.toFixed(2)}`           : "",
-    shipping > 0    ? `shipping=${shipping.toFixed(2)}`        : "",
+    codFee > 0 ? `codFee=${codFee.toFixed(2)}` : "",
+    shipping > 0 ? `shipping=${shipping.toFixed(2)}` : "",
     discountAmount > 0 ? `discount=${discountAmount.toFixed(2)}` : "",
     `isUAE=${isUAE}`,
   );
@@ -184,12 +198,12 @@ export async function POST(request: NextRequest) {
     const body: CODRequest = await request.json();
     const {
       items,
-      currency      = "AED",
+      currency = "AED",
       customer,
-      codFee        = 0,
+      codFee = 0,
       discountCode,
-      discountAmount = 0, // ← was missing
-      shipping      = 0,
+      discountAmount = 0,
+      shipping = 0,
       shippingHandle = "Shipping",
     } = body;
 
@@ -197,7 +211,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No items in cart" }, { status: 400 });
     }
     if (
-      !customer?.name  ||
+      !customer?.name ||
       !customer?.email ||
       !customer?.phone ||
       !customer?.address ||
@@ -215,7 +229,7 @@ export async function POST(request: NextRequest) {
       currency,
       codFee,
       discountCode,
-      discountAmount, // ← was missing
+      discountAmount,
       shipping,
       shippingHandle,
     );
@@ -225,7 +239,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, orderId: result.orderId });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Order creation failed";
+    const message =
+      err instanceof Error ? err.message : "Order creation failed";
     console.error("COD order error:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
