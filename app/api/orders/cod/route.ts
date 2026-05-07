@@ -70,7 +70,7 @@ async function createShopifyOrder(
       price:             codFee.toFixed(2), // e.g. 10.00 (VAT-inclusive)
       quantity:          1,
       requires_shipping: false,
-      taxable:           false, // ✅ already incl. VAT, don't add again
+      taxable:           true, // ✅ already incl. VAT, don't add again
     });
   }
 
@@ -104,7 +104,7 @@ async function createShopifyOrder(
             shipping_line: {
               title:   shippingHandle,
               price:   shipping.toFixed(2), // e.g. 35.00 (VAT-inclusive)
-              taxable: false, // ✅ already incl. VAT, don't add again
+              taxable: true, // ✅ already incl. VAT, don't add again
             },
           }),
 
