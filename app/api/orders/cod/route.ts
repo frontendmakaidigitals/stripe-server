@@ -48,37 +48,34 @@ async function createShopifyOrder(
   };
 
 const lineItems: object[] = items.map((item) => {
-  // 1. Full price as seen by the customer
   const grossPrice = item.price; 
-  
-  // 2. VAT Amount (Inclusive): (Price * Qty * 0.05) / 1.05
-  // Example: (566.50 * 1 * 0.05) / 1.05 = 26.98
   const totalLineVat = (grossPrice * item.quantity * 0.05) / 1.05;
   
   return {
-    title:             item.product_title,
-    sku:               item.sku || item.variant_id || "",
-    price:             grossPrice.toFixed(2), // Use FULL price (566.50)
-    quantity:          item.quantity,
+    title: item.product_title,
+    sku: item.sku || item.variant_id || "",
+    price: grossPrice.toFixed(2),
+    quantity: item.quantity,
     requires_shipping: true,
-    taxable:           isUAE,
+    // CRITICAL: Set to false so Shopify doesn't re-calculate
+    taxable: false, 
     tax_lines: isUAE ? [{
       title: "VAT",
-      rate:  0.05,
-      price: totalLineVat.toFixed(2) // This tells Shopify exactly how much of the 566.50 is tax
+      rate: 0.05,
+      price: totalLineVat.toFixed(2)
     }] : []
   };
 });
 
-// Fix for COD Fee - it should also have tax_lines if it's inclusive!
+// Same logic for COD Fee
 if (codFee > 0) {
   const codVat = (codFee * 0.05) / 1.05;
   lineItems.push({
-    title:             "COD (incl. VAT)",
-    price:             codFee.toFixed(2),
-    quantity:          1,
+    title: "COD (incl. VAT)",
+    price: codFee.toFixed(2),
+    quantity: 1,
     requires_shipping: false,
-    taxable:           isUAE,
+    taxable: false, // Set to false
     tax_lines: isUAE ? [{
       title: "VAT",
       rate: 0.05,
@@ -107,16 +104,17 @@ if (codFee > 0) {
           tags:             "COD, custom-checkout",
           send_receipt:     false,
           ...(shipping > 0 && {
-           shipping_line: {
-            title: shippingHandle,
-            price: (shipping / 1.05).toFixed(2),  // ← ex-VAT
-            tax_lines: isUAE ? [{
-              title: "VAT",
-              rate: 0.05,
-              price: (shipping * 0.05 / 1.05).toFixed(2)
-            }] : []
-          },
-          }),
+  shipping_line: {
+    title: shippingHandle,
+    price: shipping.toFixed(2), // Use full 35.00
+    taxable: false, // Set to false
+    tax_lines: isUAE ? [{
+      title: "VAT",
+      rate: 0.05,
+      price: (shipping * 0.05 / 1.05).toFixed(2)
+    }] : []
+  },
+}),
           // ← use fixed_amount when we have the computed amount
           // ← fall back to discount_code lookup when amount is 0
           ...(discountCode && discountAmount > 0
