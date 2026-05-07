@@ -47,20 +47,24 @@ async function createShopifyOrder(
     phone:      customer.phone,
   };
 
-  const lineItems: object[] = items.map((item) => ({
+const lineItems: object[] = items.map((item) => {
+  const priceExVat = (item.price / 1.05);
+  const vatAmount = (item.price * item.quantity * 0.05 / 1.05);
+  
+  return {
     title:             item.product_title,
     sku:               item.sku || item.variant_id || "",
-    price:             item.price.toFixed(2),
+    price:             priceExVat.toFixed(2),  // ← ex-VAT price
     quantity:          item.quantity,
     requires_shipping: true,
     taxable:           isUAE,
-
-  tax_lines: isUAE ? [{
-    title: "VAT",
-    rate:  0.05,
-    price: (item.price * item.quantity * 0.05 / 1.05).toFixed(2)
-  }] : []
-  }));
+    tax_lines: isUAE ? [{
+      title: "VAT",
+      rate:  0.05,
+      price: vatAmount.toFixed(2)
+    }] : []
+  };
+});
 
   if (codFee > 0) {
     lineItems.push({
@@ -92,10 +96,15 @@ async function createShopifyOrder(
           tags:             "COD, custom-checkout",
           send_receipt:     false,
           ...(shipping > 0 && {
-            shipping_line: {
-              title: shippingHandle,
-              price: shipping.toFixed(2),
-            },
+           shipping_line: {
+            title: shippingHandle,
+            price: (shipping / 1.05).toFixed(2),  // ← ex-VAT
+            tax_lines: isUAE ? [{
+              title: "VAT",
+              rate: 0.05,
+              price: (shipping * 0.05 / 1.05).toFixed(2)
+            }] : []
+          },
           }),
           // ← use fixed_amount when we have the computed amount
           // ← fall back to discount_code lookup when amount is 0
