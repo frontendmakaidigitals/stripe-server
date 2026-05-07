@@ -156,9 +156,10 @@ async function createShopifyOrder(
     }),
     ...(discountCode && discountAmount > 0 && {
       applied_discount: {
-        title:       discountCode,
-        value:       discountAmount.toFixed(2),
         value_type:  "fixed_amount",
+        value:       discountAmount.toFixed(2),
+        amount:      discountAmount.toFixed(2),  // ← add this
+        title:       discountCode,
         description: `Discount code: ${discountCode}`,
       },
     }),
