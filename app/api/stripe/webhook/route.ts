@@ -156,32 +156,43 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
   const discountCode   = meta.discountCode      || undefined;
   const discountAmount = parseFloat(meta.discountAmountAED || "0");
 
-  // ── Expand the session to get line items + customer_details ───────────
+  // ── Expand the session to get line items ────────────────────────────────
   console.log(`[Webhook] Expanding session ${session.id}...`);
   let expanded: Stripe.Checkout.Session;
   try {
     expanded = await stripe.checkout.sessions.retrieve(session.id, {
-      expand: ["line_items.data.price.product", "customer_details"],
+      expand: ["line_items.data.price.product"],
     });
   } catch (err) {
     console.error("[Webhook] Could not expand Stripe session:", err);
     return;
   }
 
-  // ── Build customer from session data + metadata phone ─────────────────
-  const details  = expanded.customer_details;
-  const addr     = details?.address;
-  const countryCode = addr?.country || "AE";
+  // ── Unpack customer from pipe-delimited metadata field ───────────────
+  // Format: name|email|phone|address1|address2|city|province|zip|country
+  const [
+    custName     = "",
+    custEmail    = "",
+    custPhone    = "",
+    custAddress  = "",
+    custAddress2 = "",
+    custCity     = "",
+    custProvince = "",
+    custZip      = "",
+    custCountry  = "AE",
+  ] = (meta.cust || "").split("|");
+
+  const countryCode = custCountry || "AE";
   const customer: CustomerInfo = {
     id:          "",
-    name:        details?.name  || meta.customerName  || "Guest",
-    email:       details?.email || session.customer_email || meta.customerEmail || "",
-    phone:       details?.phone || meta.customerPhone  || "",
-    address:     addr?.line1    || "",
-    address2:    addr?.line2    || meta.customerAddress2 || "",
-    city:        addr?.city     || "",
-    province:    addr?.state    || "",
-    zip:         addr?.postal_code || "",
+    name:        custName    || "Guest",
+    email:       custEmail   || session.customer_email || "",
+    phone:       custPhone,
+    address:     custAddress,
+    address2:    custAddress2,
+    city:        custCity,
+    province:    custProvince,
+    zip:         custZip,
     country:     countryCode,
     countryCode,
     addresses:   [],

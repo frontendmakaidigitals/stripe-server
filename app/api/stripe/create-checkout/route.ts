@@ -16,6 +16,10 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
 
+// Clamp a string to max chars and strip pipe chars (used as delimiter)
+const s = (v: string | undefined, max: number) =>
+  (v || "").replace(/\|/g, " ").slice(0, max);
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -23,11 +27,10 @@ export async function POST(request: NextRequest) {
       items,
       currency = "aed",
       customer,
-      rawToken,          // raw JWT — stored in cancelUrl only, NOT in metadata
       shipping,
       shippingHandle,
       discountCode,
-      discountAmount,    // display currency — for Stripe coupon
+      discountAmount,
       cancelUrl,
       aedToBase,
       shippingAED,
@@ -64,14 +67,17 @@ export async function POST(request: NextRequest) {
         product_data: {
           name:   item.product_title,
           images: item.image ? [item.image] : [],
-          // Store SKU so the webhook can reconstruct line items accurately
-          metadata: { sku: item.sku || "", variant_id: item.variant_id || "" },
+          metadata: {
+            sku:        item.sku        || "",
+            variant_id: item.variant_id || "",
+          },
         },
         unit_amount: Math.round(item.price * 100),
       },
       quantity: item.quantity,
     }));
 
+    // Shipping as a line item (display currency, filtered out in webhook)
     if (shipping && shipping > 0) {
       lineItems.push({
         price_data: {
@@ -87,7 +93,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // ── Coupon (display currency) ──────────────────────────────────────────
+    // ── Coupon (display currency, amount pre-calculated on frontend) ───────
     let discounts: { coupon: string }[] | undefined;
     if (discountCode && discountAmount && discountAmount > 0) {
       try {
@@ -99,20 +105,30 @@ export async function POST(request: NextRequest) {
           max_redemptions: 1,
         });
         discounts = [{ coupon: coupon.id }];
-        console.log(`[Stripe] Coupon created: ${coupon.id} — ${Math.round(discountAmount * 100)} cents off`);
+        console.log(
+          `[Stripe] Coupon created: ${coupon.id} — ${Math.round(discountAmount * 100)} cents off`,
+        );
       } catch (e) {
         console.warn("[Stripe] Could not create coupon:", e);
       }
     }
 
-    // ── Metadata: customer fields + AED monetary values ────────────────────
-    // Token is intentionally NOT stored here — it exceeds Stripe's 500-char
-    // metadata limit. The webhook reconstructs the order from:
-    //   1. Stripe expanded line items  (products + quantities)
-    //   2. customer_details on the session (name, email, address)
-    //   3. These metadata fields        (phone, AED amounts)
-    const safeStr = (v: string | undefined, max = 490) =>
-      (v || "").slice(0, max);
+    // ── Metadata ───────────────────────────────────────────────────────────
+    // Stripe limit: 500 chars per value, 50 keys.
+    // Customer address is packed into one pipe-delimited string so we stay
+    // well under the limit while keeping all fields the webhook needs.
+    // Format: name|email|phone|address1|address2|city|province|zip|country
+    const custPacked = [
+      s(customer?.name,     40),
+      s(customer?.email,    60),
+      s(customer?.phone,    20),
+      s(customer?.address,  80),
+      s(customer?.address2, 40),
+      s(customer?.city,     40),
+      s(customer?.province, 40),
+      s(customer?.zip,      20),
+      s(customer?.country,  10),
+    ].join("|"); // worst-case ~354 chars — safely under 500
 
     const session = await stripe.checkout.sessions.create({
       mode:                 "payment",
@@ -120,21 +136,15 @@ export async function POST(request: NextRequest) {
       customer_email:       customer?.email || undefined,
       line_items:           lineItems,
       ...(discounts ? { discounts } : { allow_promotion_codes: false }),
-      // Collect shipping address so customer_details is populated in webhook
-      shipping_address_collection: { allowed_countries: ["AE", "SA", "KW", "QA", "BH", "OM", "IN", "GB", "US"] },
       success_url: `${baseUrl}/success`,
-      cancel_url:  cancelUrl ?? `${baseUrl}/checkout${rawToken ? `?token=${rawToken}` : ""}`,
+      cancel_url:  cancelUrl ?? `${baseUrl}/checkout`,
       metadata: {
-        // Customer fields Stripe doesn't collect (phone, address line 2)
-        customerPhone:    safeStr(customer?.phone),
-        customerAddress2: safeStr(customer?.address2),
-        // AED monetary values for Shopify order creation
-        currency:         "AED",
-        aedToBase:        (aedToBase      ?? 1).toFixed(8),
-        shippingAED:      (shippingAED    ?? 0).toFixed(2),
-        shippingHandle:   safeStr(shippingHandle || "Shipping", 100),
-        discountCode:     safeStr(discountCode   || "",          100),
-        discountAmountAED:(discountAmountAED ?? 0).toFixed(2),
+        cust:              custPacked,
+        aedToBase:         (aedToBase         ?? 1).toFixed(8),
+        shippingAED:       (shippingAED       ?? 0).toFixed(2),
+        shippingHandle:    s(shippingHandle || "Shipping", 60),
+        discountCode:      s(discountCode   || "",         60),
+        discountAmountAED: (discountAmountAED ?? 0).toFixed(2),
       },
     });
 
