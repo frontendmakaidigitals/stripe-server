@@ -89,22 +89,18 @@ async function createShopifyOrder(
           shipping_address: address,
           billing_address:  address,
           tax_exempt:       !isUAE,
-          taxes_included:   true, // ✅ all prices are VAT-inclusive
+          taxes_included:   true, 
           note: `COD order — phone: ${customer.phone}${
             codFee > 0 ? ` | COD fee: ${codFee.toFixed(2)} ${currency}` : ""
           }`,
           tags:         "COD, custom-checkout",
           send_receipt: false,
-
-          // ── Shipping ────────────────────────────────────────────────────
-          // shipping is VAT-inclusive (e.g. 35.00). Send as-is.
-          // taxable: false — Shopify adds extra VAT on shipping lines
-          // even with taxes_included: true (known Shopify bug).
+ 
           ...(shipping > 0 && {
             shipping_line: {
               title:   shippingHandle,
-              price:   shipping.toFixed(2), // e.g. 35.00 (VAT-inclusive)
-              taxable: true, // ✅ already incl. VAT, don't add again
+              price:   shipping.toFixed(2),  
+              taxable: true,  
             },
           }),
 

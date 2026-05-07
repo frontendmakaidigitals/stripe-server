@@ -142,6 +142,7 @@ export default function CheckoutClient({
     setError,
     setOrderId,
     setStep,
+    aedToBase,
   });
 
   async function handleApplyDiscount(code: string) {

@@ -12,18 +12,13 @@ interface UsePaymentHandlersOptions {
   selectedRate: ShippingRate | null;
   discountResult: DiscountResult;
   discountAmount: number;
+  aedToBase: number; // ← add this so we can convert back to AED
   setLoading: (v: boolean) => void;
   setError: (v: string) => void;
   setOrderId: (v: string) => void;
   setStep: (v: Step) => void;
 }
 
-/**
- * All payment-gateway submit functions.
- * Each function accepts an optional customerOverride so it can be called
- * both from the saved-address path (no override) and the guest/new-address
- * path (override built from validated form data).
- */
 export function usePaymentHandlers({
   items,
   currency,
@@ -34,21 +29,22 @@ export function usePaymentHandlers({
   selectedRate,
   discountResult,
   discountAmount,
+  aedToBase,
   setLoading,
   setError,
   setOrderId,
   setStep,
 }: UsePaymentHandlersOptions) {
-  // ── Shared discount payload ─────────────────────────────────────
+  // ── Shared discount payload ──────────────────────────────────────────────
   const discountPayload = discountResult?.valid
     ? {
-        discountCode: discountResult.code,
+        discountCode:   discountResult.code,
         discountAmount,
-        discountType: discountResult.type,
+        discountType:   discountResult.type,
       }
     : { discountCode: undefined, discountAmount: 0, discountType: null };
 
-  // ── Stripe ──────────────────────────────────────────────────────
+  // ── Stripe ───────────────────────────────────────────────────────────────
   async function startStripe(customer: CustomerInfo) {
     setLoading(true);
     setError("");
@@ -60,10 +56,10 @@ export function usePaymentHandlers({
           items,
           currency,
           customer,
-          token: payload.token,
-          shipping: shippingCost,
+          token:          payload.token,
+          shipping:       shippingCost,
           shippingHandle: selectedRate?.handle,
-          cancelUrl: window.location.href,
+          cancelUrl:      window.location.href,
           ...discountPayload,
         }),
       });
@@ -76,7 +72,7 @@ export function usePaymentHandlers({
     }
   }
 
-  // ── Tabby ───────────────────────────────────────────────────────
+  // ── Tabby ────────────────────────────────────────────────────────────────
   async function startTabby(customer: CustomerInfo) {
     setLoading(true);
     setError("");
@@ -88,8 +84,8 @@ export function usePaymentHandlers({
           items,
           currency,
           customer,
-          token: payload.token,
-          shipping: shippingCost,
+          token:     payload.token,
+          shipping:  shippingCost,
           cancelUrl: window.location.href,
         }),
       });
@@ -102,7 +98,7 @@ export function usePaymentHandlers({
     }
   }
 
-  // ── Tamara ──────────────────────────────────────────────────────
+  // ── Tamara ───────────────────────────────────────────────────────────────
   async function startTamara(customer: CustomerInfo) {
     setLoading(true);
     setError("");
@@ -114,8 +110,8 @@ export function usePaymentHandlers({
           items,
           currency,
           customer,
-          token: payload.token,
-          shipping: shippingCost,
+          token:     payload.token,
+          shipping:  shippingCost,
           cancelUrl: window.location.href,
         }),
       });
@@ -128,23 +124,38 @@ export function usePaymentHandlers({
     }
   }
 
-  // ── Cash on Delivery ────────────────────────────────────────────
+  // ── Cash on Delivery ─────────────────────────────────────────────────────
   async function placeCODOrder(customer: CustomerInfo) {
     setLoading(true);
     setError("");
     try {
+      // ✅ Convert item prices back to AED before sending to Shopify.
+      // items[].price is in the display currency (e.g. USD, EUR).
+      // Shopify order must always be in AED so the email shows AED prices.
+      // aedToBase = how many display-currency units = 1 AED
+      // so: displayPrice / aedToBase = AED price
+      const itemsInAED = items.map((item) => ({
+        ...item,
+        price: aedToBase > 0 ? item.price / aedToBase : item.price,
+      }));
+
+      // discountAmount is also in display currency — convert to AED
+      const discountAmountAED =
+        aedToBase > 0 ? discountAmount / aedToBase : discountAmount;
+
       const res = await fetch("/api/orders/cod", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items,
-          currency,
+          items:          itemsInAED,   // ✅ AED prices
+          currency:       "AED",        // ✅ always AED for Shopify order
           customer,
-          token: payload.token,
-          shipping: shippingCostAED,
-          codFee: codFeeAED,
+          token:          payload.token,
+          shipping:       shippingCostAED,  // ✅ already AED
+          codFee:         codFeeAED,        // ✅ already AED
           shippingHandle: selectedRate?.handle,
           ...discountPayload,
+          discountAmount: discountAmountAED, // ✅ converted to AED
         }),
       });
       const data = await res.json();
@@ -158,10 +169,10 @@ export function usePaymentHandlers({
     }
   }
 
-  // ── Dispatcher ──────────────────────────────────────────────────
+  // ── Dispatcher ───────────────────────────────────────────────────────────
   function dispatchPayment(method: PaymentMethod, customer: CustomerInfo) {
     if (method === "stripe") return startStripe(customer);
-    if (method === "tabby") return startTabby(customer);
+    if (method === "tabby")  return startTabby(customer);
     if (method === "tamara") return startTamara(customer);
     placeCODOrder(customer);
   }
