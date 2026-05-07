@@ -11,7 +11,7 @@ interface CODRequest {
   shippingHandle?: string;
   codFee?: number;
   discountCode?: string;
-  discountAmount?: number;
+  discountAmount?: number; // ← already in interface
   discountType?: string | null;
 }
 
@@ -21,6 +21,7 @@ async function createShopifyOrder(
   currency: string,
   codFee: number = 0,
   discountCode?: string,
+  discountAmount: number = 0, // ← add
   shipping: number = 0,
   shippingHandle: string = "Shipping",
 ) {
@@ -36,35 +37,32 @@ async function createShopifyOrder(
 
   const address = {
     first_name: firstName,
-    last_name: lastName,
-    address1: customer.address,
-    address2: customer.address2 || "",
-    city: customer.city,
-    province: customer.province || "",  // ← emirate for UAE
-    zip: customer.zip || "",
-    country: customer.country || "AE",
-    phone: customer.phone,
+    last_name:  lastName,
+    address1:   customer.address,
+    address2:   customer.address2 || "",
+    city:       customer.city,
+    province:   customer.province || "",
+    zip:        customer.zip      || "",
+    country:    customer.country  || "AE",
+    phone:      customer.phone,
   };
 
-  // Don't use variant_id — Shopify overrides price when variant_id present
-  // Use sku to keep product reference, set price explicitly
   const lineItems: object[] = items.map((item) => ({
-    title: item.product_title,
-    sku: item.sku || item.variant_id || "",
-    price: item.price.toFixed(2), // market price (already enriched)
-    quantity: item.quantity,
+    title:             item.product_title,
+    sku:               item.sku || item.variant_id || "",
+    price:             item.price.toFixed(2),
+    quantity:          item.quantity,
     requires_shipping: true,
-    taxable: isUAE,
+    taxable:           isUAE,
   }));
 
-  // COD fee as non-taxable line item
   if (codFee > 0) {
     lineItems.push({
-      title: "COD (incl. VAT)",
-      price: codFee.toFixed(2),
-      quantity: 1,
+      title:             "COD (incl. VAT)",
+      price:             codFee.toFixed(2),
+      quantity:          1,
       requires_shipping: false,
-      taxable: false,
+      taxable:           false,
     });
   }
 
@@ -74,37 +72,47 @@ async function createShopifyOrder(
       method: "POST",
       headers: {
         "X-Shopify-Access-Token": token,
-        "Content-Type": "application/json",
+        "Content-Type":           "application/json",
       },
       body: JSON.stringify({
         draft_order: {
-          line_items: lineItems,
-          email: customer.email,
+          line_items:       lineItems,
+          email:            customer.email,
           shipping_address: address,
-          billing_address: address,
-          tax_exempt: !isUAE,
+          billing_address:  address,
+          tax_exempt:       !isUAE,
           note: `COD order — phone: ${customer.phone}${codFee > 0 ? ` | COD fee: ${codFee.toFixed(2)} ${currency}` : ""}`,
-          tags: "COD, custom-checkout",
-          send_receipt: false,
-          ...(shipping > 0
-            ? {
-                shipping_line: {
-                  title: shippingHandle,
-                  price: shipping.toFixed(2),
-                },
-              }
-            : {}),
-          ...(discountCode
+          tags:             "COD, custom-checkout",
+          send_receipt:     false,
+          ...(shipping > 0 && {
+            shipping_line: {
+              title: shippingHandle,
+              price: shipping.toFixed(2),
+            },
+          }),
+          // ← use fixed_amount when we have the computed amount
+          // ← fall back to discount_code lookup when amount is 0
+          ...(discountCode && discountAmount > 0
             ? {
                 applied_discount: {
-                  value_type: "percentage",
-                  value: "0",
-                  title: discountCode,
-                  description: discountCode,
-                  application_type: "discount_code",
+                  value_type:  "fixed_amount",
+                  value:       discountAmount.toFixed(2),
+                  amount:      discountAmount.toFixed(2),
+                  title:       discountCode,
+                  description: `Discount code: ${discountCode}`,
                 },
               }
-            : {}),
+            : discountCode
+              ? {
+                  applied_discount: {
+                    value_type:       "percentage",
+                    value:            "0",
+                    title:            discountCode,
+                    description:      discountCode,
+                    application_type: "discount_code",
+                  },
+                }
+              : {}),
         },
       }),
     },
@@ -122,10 +130,10 @@ async function createShopifyOrder(
     subtotal_price:   draftJson.draft_order?.subtotal_price,
     total_tax:        draftJson.draft_order?.total_tax,
     applied_discount: draftJson.draft_order?.applied_discount,
-    line_items:       draftJson.draft_order?.line_items?.map((l: any) => ({
+    line_items: draftJson.draft_order?.line_items?.map((l: any) => ({
       title: l.title,
       price: l.price,
-      sku: l.sku,
+      sku:   l.sku,
     })),
   });
 
@@ -137,7 +145,7 @@ async function createShopifyOrder(
       method: "PUT",
       headers: {
         "X-Shopify-Access-Token": token,
-        "Content-Type": "application/json",
+        "Content-Type":           "application/json",
       },
     },
   );
@@ -153,8 +161,9 @@ async function createShopifyOrder(
     `✅ COD order created: ${completed.name}`,
     `customer=${customer.email}`,
     `total=${completed.total_price} ${currency}`,
-    codFee > 0 ? `codFee=${codFee.toFixed(2)}` : "",
-    shipping > 0 ? `shipping=${shipping.toFixed(2)}` : "",
+    codFee > 0      ? `codFee=${codFee.toFixed(2)}`           : "",
+    shipping > 0    ? `shipping=${shipping.toFixed(2)}`        : "",
+    discountAmount > 0 ? `discount=${discountAmount.toFixed(2)}` : "",
     `isUAE=${isUAE}`,
   );
 
@@ -166,11 +175,12 @@ export async function POST(request: NextRequest) {
     const body: CODRequest = await request.json();
     const {
       items,
-      currency = "AED",
+      currency      = "AED",
       customer,
-      codFee = 0,
+      codFee        = 0,
       discountCode,
-      shipping = 0,
+      discountAmount = 0, // ← was missing
+      shipping      = 0,
       shippingHandle = "Shipping",
     } = body;
 
@@ -178,7 +188,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No items in cart" }, { status: 400 });
     }
     if (
-      !customer?.name ||
+      !customer?.name  ||
       !customer?.email ||
       !customer?.phone ||
       !customer?.address ||
@@ -196,6 +206,7 @@ export async function POST(request: NextRequest) {
       currency,
       codFee,
       discountCode,
+      discountAmount, // ← was missing
       shipping,
       shippingHandle,
     );
