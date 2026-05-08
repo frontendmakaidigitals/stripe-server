@@ -1,15 +1,111 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyCheckoutToken } from "@/app/lib/checkout-token";
-import { markTokenUsed } from "@/app/lib/used-tokens";
+import jwt from "jsonwebtoken";
+import { Redis } from "@upstash/redis";
 import type { CartItem, CustomerInfo } from "@/types/checkout.types";
+import { markTokenUsed } from "@/app/lib/used-tokens";
 
 export const runtime = "nodejs";
 
+const redis = new Redis({
+  url:   process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
+
+// ── JWT verification ───────────────────────────────────────────────────────────
+// Tamara sends tamaraToken as a JWT (HS256) in:
+//   - Authorization: Bearer <tamaraToken>   (header)
+//   - ?tamaraToken=<tamaraToken>            (query param — backup)
+// The secret is your TAMARA_NOTIFICATION_TOKEN, NOT the API key.
+function verifyTamaraToken(request: NextRequest): void {
+  const authHeader = request.headers.get("authorization") ?? "";
+  const token      = authHeader.replace(/^Bearer\s+/i, "").trim();
+
+  if (!token) {
+    throw new Error("Missing tamaraToken in Authorization header");
+  }
+
+  // Throws if invalid or expired — let the caller handle it
+  jwt.verify(token, process.env.TAMARA_NOTIFICATION_TOKEN!, {
+    algorithms: ["HS256"],
+  });
+}
+
+// ── Tamara API helpers ─────────────────────────────────────────────────────────
+async function tamaraPost(path: string, body: object = {}): Promise<any> {
+  const res = await fetch(`${process.env.TAMARA_API_URL}${path}`, {
+    method:  "POST",
+    headers: {
+      Authorization:  `Bearer ${process.env.TAMARA_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Tamara ${path} failed (${res.status}): ${text}`);
+  }
+  return JSON.parse(text);
+}
+
+async function authoriseOrder(tamaraOrderId: string): Promise<{ autoCaptured: boolean }> {
+  // Confirms to Tamara that we received the approved notification.
+  // Without this the order stays at "approved" and is excluded from settlement.
+  // Returns auto_captured: true if Tamara already captured — skip manual capture in that case.
+  const result = await tamaraPost(`/orders/${tamaraOrderId}/authorise`);
+  console.log(`[Tamara webhook] Authorised order ${tamaraOrderId} auto_captured=${result.auto_captured}`);
+  return { autoCaptured: result.auto_captured === true };
+}
+
+async function captureOrder(
+  tamaraOrderId: string,
+  items: CartItem[],
+  shipping: number,
+  discountAmount: number,
+  currency: string,
+): Promise<void> {
+  const toAmount = (val: number) => ({
+    amount:   parseFloat(val.toFixed(2)),
+    currency: currency.toUpperCase(),
+  });
+
+  const itemTotal  = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const grandTotal = Math.max(0, itemTotal + shipping - discountAmount);
+
+  // Endpoint is POST /payments/capture — order_id goes in the body, not the URL
+  await tamaraPost("/payments/capture", {
+    order_id:     tamaraOrderId,
+    total_amount: toAmount(grandTotal),
+    items: items.map((item) => ({
+      reference_id:    item.variant_id || item.product_title,
+      type:            "Physical",
+      name:            item.product_title,
+      sku:             item.variant_id || "",
+      quantity:        item.quantity,
+      unit_price:      toAmount(item.price),
+      total_amount:    toAmount(item.price * item.quantity),
+      discount_amount: toAmount(0),
+      tax_amount:      toAmount(0),
+    })),
+    shipping_amount: toAmount(shipping),
+    discount_amount: toAmount(discountAmount),
+    tax_amount:      toAmount(0),
+    shipping_info: {
+      shipped_at:       new Date().toISOString(),
+      shipping_company: "Standard Shipping",
+      tracking_number:  "",
+      tracking_url:     "",
+    },
+  });
+
+  console.log(`[Tamara webhook] Captured order ${tamaraOrderId}`);
+}
+
+// ── Shopify order creation ─────────────────────────────────────────────────────
 async function createShopifyOrder(
   items: CartItem[],
   customer: CustomerInfo,
-  currency: string,
-  paymentId: string,
+  tamaraOrderId: string,
   shipping: number = 0,
   shippingHandle: string = "Shipping",
   discountAmount: number = 0,
@@ -37,7 +133,6 @@ async function createShopifyOrder(
     phone:      customer.phone    || "",
   };
 
-  // Don't use variant_id — Shopify overrides price when variant_id present
   const lineItems: object[] = items.map((item) => ({
     title:             item.product_title,
     sku:               item.sku || item.variant_id || "",
@@ -62,20 +157,23 @@ async function createShopifyOrder(
           shipping_address: address,
           billing_address:  address,
           tax_exempt:       !isUAE,
-          note:             `Paid via Tamara. Order ID: ${paymentId}`,
-          tags:             "Tamara, custom-checkout",
+          taxes_included:   true,
+          note:             `Paid via Tamara. Order ID: ${tamaraOrderId}`,
+          tags:             "Tamara, BNPL, custom-checkout",
           send_receipt:     true,
           ...(shipping > 0 && {
             shipping_line: {
-              title: shippingHandle,
-              price: shipping.toFixed(2),
+              title:   shippingHandle,
+              price:   shipping.toFixed(2),
+              taxable: true,
             },
           }),
           ...(discountCode && discountAmount > 0 && {
             applied_discount: {
-              title:       discountCode,
-              value:       discountAmount.toFixed(2),
               value_type:  "fixed_amount",
+              value:       discountAmount.toFixed(2),
+              amount:      discountAmount.toFixed(2),
+              title:       discountCode,
               description: `Discount code: ${discountCode}`,
             },
           }),
@@ -110,45 +208,157 @@ async function createShopifyOrder(
   return completed.name;
 }
 
+// ── Webhook handler ────────────────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
-  const notificationToken = request.headers.get("Notification-Token");
-  if (notificationToken !== process.env.TAMARA_NOTIFICATION_TOKEN) {
-    console.warn("[Tamara webhook] Invalid notification token");
+  console.log("[Tamara webhook] HIT — headers:", Object.fromEntries(request.headers));
+
+  // Step 1: Verify JWT from Tamara
+  try {
+    verifyTamaraToken(request);
+  } catch (err) {
+    console.warn("[Tamara webhook] Invalid token:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-
-  if (body.event_type !== "order_approved") {
-    return NextResponse.json({ received: true });
+  // Step 2: Parse body
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const token = body.metadata?.token;
-  if (token) {
-    try {
-      const payload = await verifyCheckoutToken(token);
+  const { event_type, order_id: tamaraOrderId, order_reference_id: referenceId } = body;
 
-      // Read from JWT payload first, fall back to Tamara metadata
-      const shipping       = payload.shipping       ?? parseFloat(body.metadata?.shipping       || "0");
-      const shippingHandle = payload.shippingHandle ?? body.metadata?.shippingHandle             ?? "Shipping";
-      const discountAmount = payload.discountAmount ?? parseFloat(body.metadata?.discountAmount  || "0");
-      const discountCode   = payload.discountCode   ?? (body.metadata?.discountCode || undefined);
+  console.log(`[Tamara webhook] event=${event_type} tamaraOrderId=${tamaraOrderId} referenceId=${referenceId}`);
 
-      await createShopifyOrder(
-        payload.items,
-        payload.customer,
-        payload.currency || "AED",
-        body.order_id,
-        shipping,
-        shippingHandle,
-        discountAmount,
-        discountCode,
-      );
-      markTokenUsed(token);
-    } catch (err) {
-      console.error("[Tamara webhook] Failed:", err);
+  // Step 3: Route by event type
+  switch (event_type) {
+
+    // ── approved: MUST call authorise or order is excluded from settlement ──
+    case "order_approved": {
+      try {
+        const { autoCaptured } = await authoriseOrder(tamaraOrderId);
+        if (autoCaptured) {
+          // Tamara already captured — order_captured webhook will fire next.
+          // Do NOT call capture again or the Shopify order will be created twice.
+          console.log(`[Tamara webhook] Auto-captured — skipping manual capture for ${tamaraOrderId}`);
+        }
+      } catch (err) {
+        console.error("[Tamara webhook] Authorise failed:", err);
+        // Return 500 so Tamara retries — we must not lose this event
+        return NextResponse.json({ error: "Authorise failed" }, { status: 500 });
+      }
+      break;
+    }
+
+    // ── authorised: now safe to capture (only if NOT auto_captured) ───────
+    case "order_authorised": {
+      // Look up order data from Redis to get items + amounts for capture payload
+      let checkoutPayload: any;
+      try {
+        const raw = await redis.get(`tamara_checkout:${referenceId}`);
+        if (!raw) throw new Error(`Redis key not found: tamara_checkout:${referenceId}`);
+        checkoutPayload = typeof raw === "string" ? JSON.parse(raw) : raw;
+      } catch (err) {
+        console.error("[Tamara webhook] Redis lookup failed on authorised:", err);
+        return NextResponse.json({ error: "Order data not found" }, { status: 500 });
+      }
+
+      try {
+        await captureOrder(
+          tamaraOrderId,
+          checkoutPayload.items,
+          checkoutPayload.shipping       ?? 0,
+          checkoutPayload.discountAmount ?? 0,
+          checkoutPayload.currency       ?? "AED",
+        );
+      } catch (err) {
+        console.error("[Tamara webhook] Capture failed:", err);
+        return NextResponse.json({ error: "Capture failed" }, { status: 500 });
+      }
+      break;
+    }
+
+    // ── captured: money confirmed — create Shopify order ───────────────────
+    case "order_captured": {
+      // Idempotency — same pattern as Tabby (SET NX)
+      const idempotencyKey = `tamara_processed:${tamaraOrderId}`;
+      try {
+        const wasSet = await redis.set(idempotencyKey, "1", {
+          ex: 60 * 60 * 24 * 7, // 7 days
+          nx: true,
+        });
+        if (wasSet === null) {
+          console.log("[Tamara webhook] Already processed:", tamaraOrderId);
+          return NextResponse.json({ received: true });
+        }
+      } catch (err) {
+        console.error("[Tamara webhook] Idempotency Redis error — aborting:", err);
+        return NextResponse.json({ error: "Redis error" }, { status: 500 });
+      }
+
+      // Resolve checkout payload from Redis
+      let checkoutPayload: any;
+      try {
+        const raw = await redis.get(`tamara_checkout:${referenceId}`);
+        if (!raw) throw new Error(`Redis key not found: tamara_checkout:${referenceId}`);
+        checkoutPayload = typeof raw === "string" ? JSON.parse(raw) : raw;
+      } catch (err) {
+        // Clear idempotency key so the webhook can be retried
+        await redis.del(idempotencyKey);
+        console.error("[Tamara webhook] Redis lookup failed on captured:", err);
+        return NextResponse.json({ error: "Order data not found" }, { status: 500 });
+      }
+
+      // Create Shopify order
+      try {
+        const orderName = await createShopifyOrder(
+          checkoutPayload.items,
+          checkoutPayload.customer,
+          tamaraOrderId,
+          checkoutPayload.shipping       ?? 0,
+          checkoutPayload.shippingHandle ?? "Shipping",
+          checkoutPayload.discountAmount ?? 0,
+          checkoutPayload.discountCode,
+        );
+
+        console.log(
+          `✅ Shopify order ${orderName} created for Tamara order ${tamaraOrderId}`,
+        );
+      } catch (err) {
+        // Clear idempotency key so Tamara's retry will attempt order creation again
+        await redis.del(idempotencyKey);
+        console.error("[Tamara webhook] Shopify order creation failed:", err);
+        return NextResponse.json({ error: "Order creation failed" }, { status: 500 });
+      }
+
+      // Cleanup: mark JWT token used + delete Redis checkout payload
+      if (checkoutPayload.token) {
+        try { await markTokenUsed(checkoutPayload.token); } catch {}
+      }
+      if (referenceId) {
+        try { await redis.del(`tamara_checkout:${referenceId}`); } catch {}
+      }
+
+      break;
+    }
+
+    // ── declined / expired / canceled / refunded ───────────────────────────
+    case "order_declined":
+    case "order_expired":
+    case "order_canceled":   // Tamara uses single-l spelling
+    case "order_refunded": {
+      console.warn(`[Tamara webhook] Order ${tamaraOrderId} — ${event_type}`);
+      // Add any notification logic here (email, DB status update, etc.)
+      break;
+    }
+
+    default: {
+      console.log(`[Tamara webhook] Unhandled event: ${event_type}`);
     }
   }
 
+  // Always return 200 — Tamara retries on non-200 for failed events above
   return NextResponse.json({ received: true });
 }

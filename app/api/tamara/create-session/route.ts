@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { CartItem, CustomerInfo } from "@/types/checkout.types";
+import { Redis } from "@upstash/redis";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
+
+const redis = new Redis({
+  url:   process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
@@ -18,20 +24,20 @@ export async function POST(request: NextRequest) {
       customer,
       currency = "AED",
       token,
-      shipping,
-      shippingHandle = "Shipping", // ← add
-      discountAmount = 0,          // ← add
-      discountCode,                // ← add
+      shipping = 0,
+      shippingHandle = "Shipping",
+      discountAmount = 0,
+      discountCode,
       cancelUrl,
-    } = await request.json() as {
+    } = (await request.json()) as {
       items: CartItem[];
       customer: CustomerInfo;
       currency?: string;
       token?: string;
       shipping?: number;
-      shippingHandle?: string;  // ← add
-      discountAmount?: number;  // ← add
-      discountCode?: string;    // ← add
+      shippingHandle?: string;
+      discountAmount?: number;
+      discountCode?: string;
       cancelUrl?: string;
     };
 
@@ -42,10 +48,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const baseUrl    = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
-    const itemTotal  = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-    const shipTotal  = shipping ?? 0;
-    const grandTotal = itemTotal + shipTotal;
+    const baseUrl      = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
+    const referenceId  = `order_${Date.now()}`;
+    const itemTotal    = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+    const grandTotal   = Math.max(0, itemTotal + shipping - discountAmount);
 
     const toAmount = (val: number) => ({
       amount:   parseFloat(val.toFixed(2)),
@@ -56,23 +62,25 @@ export async function POST(request: NextRequest) {
     const lastName = rest.join(" ") || "-";
 
     const payload = {
-      order_reference_id: `order_${Date.now()}`,
+      order_reference_id: referenceId,
       total_amount:       toAmount(grandTotal),
-      shipping_amount:    toAmount(shipTotal),
+      shipping_amount:    toAmount(shipping),
       tax_amount:         toAmount(0),
       discount: {
-        amount: toAmount(discountAmount), // ← use actual discount
+        amount: toAmount(discountAmount),
         name:   discountCode || "",
       },
       items: items.map((item) => ({
-        reference_id: item.variant_id || item.product_title,
-        type:         "Physical",
-        name:         item.product_title,
-        sku:          item.variant_id || "",
-        quantity:     item.quantity,
-        unit_price:   toAmount(item.price),
-        total_amount: toAmount(item.price * item.quantity),
-        image_url:    item.image || "",
+        reference_id:    item.variant_id || item.product_title,
+        type:            "Physical",
+        name:            item.product_title,
+        sku:             item.variant_id || "",
+        quantity:        item.quantity,
+        unit_price:      toAmount(item.price),
+        total_amount:    toAmount(item.price * item.quantity),
+        discount_amount: toAmount(0),
+        tax_amount:      toAmount(0),
+        image_url:       item.image || "",
       })),
       consumer: {
         first_name:   firstName,
@@ -107,14 +115,6 @@ export async function POST(request: NextRequest) {
       payment_type: "PAY_BY_INSTALMENTS",
       instalments:  4,
       locale:       "en_US",
-      metadata: {
-        token:          token          || "",
-        customer:       customer.email || "",
-        shipping:       shipTotal.toFixed(2),              // ← add for webhook
-        shippingHandle: shippingHandle,                    // ← add for webhook
-        discountAmount: discountAmount.toFixed(2),         // ← add for webhook
-        discountCode:   discountCode   || "",              // ← add for webhook
-      },
     };
 
     const res = await fetch(`${process.env.TAMARA_API_URL}/checkout`, {
@@ -130,11 +130,12 @@ export async function POST(request: NextRequest) {
       const error = await res.text();
       console.error("[Tamara] Session creation failed:", error);
       return NextResponse.json(
-        { error: "Tamara session failed" },
+        { error: "Tamara session failed", detail: error },
         { status: 502, headers: CORS_HEADERS },
       );
     }
 
+    // data = { order_id, checkout_id, checkout_url, status: "new" }
     const data = await res.json();
 
     if (!data.checkout_url) {
@@ -144,8 +145,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Store everything the webhook will need to create the Shopify order.
+    // Mirrors the tabby_checkout:{referenceId} pattern exactly.
+    await redis.set(
+      `tamara_checkout:${referenceId}`,
+      JSON.stringify({
+        items,
+        customer,
+        currency,
+        shipping,
+        shippingHandle,
+        discountAmount,
+        discountCode,
+        token:         token || "",
+        tamaraOrderId: data.order_id,   // Tamara's order_id, needed for authorise/capture
+      }),
+      { ex: 60 * 60 * 24 }, // 24 h TTL
+    );
+
+    console.log(
+      `[Tamara] Session created. referenceId=${referenceId} tamaraOrderId=${data.order_id}`,
+    );
+
     return NextResponse.json(
-      { url: data.checkout_url },
+      { url: data.checkout_url, referenceId },
       { headers: CORS_HEADERS },
     );
 

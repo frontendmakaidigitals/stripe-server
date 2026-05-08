@@ -163,29 +163,42 @@ async function startTabby(customer: CustomerInfo) {
 
   // ── Tamara ───────────────────────────────────────────────────────────────
   async function startTamara(customer: CustomerInfo) {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/tamara/create-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          currency,
-          customer,
-          token:     payload.token,
-          shipping:  shippingCost,
-          cancelUrl: window.location.href,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Tamara checkout failed");
-      window.location.href = data.url;
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-      setLoading(false);
-    }
+  setLoading(true);
+  setError("");
+  try {
+    const itemsInAED = items.map((item) => ({
+      ...item,
+      price: aedToBase > 0 ? item.price / aedToBase : item.price,
+    }));
+ 
+    const discountAmountAED =
+      aedToBase > 0 ? discountAmount / aedToBase : discountAmount;
+ 
+    const res = await fetch("/api/tamara/create-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items:          itemsInAED,          // AED prices — stored in Redis for Shopify
+        currency,                            // display currency — used for Tamara session amount
+        customer,
+        token:          payload.token,
+        shipping:       shippingCostAED,     // AED — stored in Redis for Shopify
+        shippingHandle: selectedRate?.handle,
+        cancelUrl:      window.location.href,
+        ...discountPayload,
+        discountAmount: discountAmountAED,   // AED — stored in Redis for Shopify
+      }),
+    });
+ 
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Tamara checkout failed");
+    window.location.href = data.url;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Something went wrong";
+    setError(msg);
+    setLoading(false);
   }
+}
 
   // ── Cash on Delivery ─────────────────────────────────────────────────────
   async function placeCODOrder(customer: CustomerInfo) {
