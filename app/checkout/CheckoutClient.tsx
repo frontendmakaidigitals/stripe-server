@@ -325,11 +325,6 @@ export default function CheckoutClient({
                         }}
                       />
 
-                      {error && (
-                        <div className="mb-4 rounded-[6px] border border-[#fecaca] bg-[#fef2f2] px-4 py-3 text-sm text-[#dc2626]">
-                          {error}
-                        </div>
-                      )}
                       <button
                         type="button"
                         onClick={handlePayNow}
