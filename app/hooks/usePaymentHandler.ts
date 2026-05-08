@@ -18,7 +18,41 @@ interface UsePaymentHandlersOptions {
   setOrderId: (v: string) => void;
   setStep: (v: Step) => void;
 }
+function getFriendlyStripeError(raw: string, currency: string): string {
+  const msg = raw.toLowerCase();
 
+  if (msg.includes("invalid currency") || msg.includes("currency"))
+    return `Card payments are not supported in ${currency.toUpperCase()}.`;
+
+  if (msg.includes("card was declined") || msg.includes("card_declined"))
+    return "Your card was declined. Please try a different card.";
+
+  if (msg.includes("insufficient_funds"))
+    return "Your card has insufficient funds. Please try a different card.";
+
+  if (msg.includes("expired_card") || msg.includes("card has expired"))
+    return "Your card has expired. Please use a different card.";
+
+  if (msg.includes("incorrect_cvc") || msg.includes("security code"))
+    return "Your card's security code is incorrect. Please check and try again.";
+
+  if (msg.includes("incorrect_number") || msg.includes("card number"))
+    return "Your card number is incorrect. Please check and try again.";
+
+  if (msg.includes("authentication_required") || msg.includes("3d secure"))
+    return "Your bank requires additional authentication. Please try again and complete the verification.";
+
+  if (msg.includes("rate_limit") || msg.includes("too many requests"))
+    return "Too many requests. Please wait a moment and try again.";
+
+  if (msg.includes("network") || msg.includes("fetch"))
+    return "A network error occurred. Please check your connection and try again.";
+
+  if (msg.includes("stripe checkout failed") || msg.includes("checkout failed"))
+    return "Unable to start checkout. Please try again.";
+
+  return "Payment failed. Please try again or use a different payment method.";
+}
 export function usePaymentHandlers({
   items,
   currency,
@@ -73,8 +107,16 @@ export function usePaymentHandlers({
       if (!res.ok) throw new Error(data.error || "Stripe checkout failed");
       window.location.href = data.url;
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-      setLoading(false);
+  
+  // ← friendly message for unsupported currency
+        const raw = err instanceof Error ? err.message : "";
+  const msg = getFriendlyStripeError(raw, currency);
+  setError(msg);
+  toast.error(msg, {
+    description: "If the problem persists, please contact support.",
+    duration: 6000,
+  });
+  setLoading(false);
     }
   }
 
