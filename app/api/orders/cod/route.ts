@@ -47,10 +47,6 @@ async function createShopifyOrder(
     phone:      customer.phone,
   };
 
-  // ── Line items ────────────────────────────────────────────────────────────
-  // item.price is always VAT-inclusive (e.g. 566.50 incl. 5% VAT for non-UAE,
-  // or 577.50 incl. 5% VAT for UAE). We send the price as-is with
-  // taxes_included: true so Shopify back-calculates VAT correctly.
   const lineItems: object[] = items.map((item) => ({
     title:             item.product_title,
     sku:               item.sku || item.variant_id || "",
@@ -60,17 +56,13 @@ async function createShopifyOrder(
     taxable:           true,
   }));
 
-  // ── COD fee ───────────────────────────────────────────────────────────────
-  // codFee is VAT-inclusive (e.g. 10.00). Send as-is.
-  // taxable: false — because taxes_included: true + taxable: true on fees
-  // causes Shopify to double-count VAT (known Shopify bug).
   if (codFee > 0) {
     lineItems.push({
       title:             "COD Fee",
       price:             codFee.toFixed(2), // e.g. 10.00 (VAT-inclusive)
       quantity:          1,
       requires_shipping: false,
-      taxable:           true, // ✅ already incl. VAT, don't add again
+      taxable:           true,  
     });
   }
 
@@ -139,19 +131,6 @@ async function createShopifyOrder(
 
   const draftJson = await draftRes.json();
 
-  console.log("[COD] Shopify draft order totals:", {
-    total_price:      draftJson.draft_order?.total_price,
-    subtotal_price:   draftJson.draft_order?.subtotal_price,
-    total_tax:        draftJson.draft_order?.total_tax,
-    taxes_included:   draftJson.draft_order?.taxes_included,
-    applied_discount: draftJson.draft_order?.applied_discount,
-    line_items: draftJson.draft_order?.line_items?.map((l: any) => ({
-      title:     l.title,
-      price:     l.price,
-      taxable:   l.taxable,
-      tax_lines: l.tax_lines,
-    })),
-  });
 
   const draft = draftJson.draft_order;
 
@@ -175,16 +154,6 @@ async function createShopifyOrder(
   }
 
   const { draft_order: completed } = await completeRes.json();
-
-  console.log(
-    `✅ COD order created: ${completed.name}`,
-    `customer=${customer.email}`,
-    `total=${completed.total_price} ${currency}`,
-    codFee > 0         ? `codFee=${codFee.toFixed(2)}`           : "",
-    shipping > 0       ? `shipping=${shipping.toFixed(2)}`        : "",
-    discountAmount > 0 ? `discount=${discountAmount.toFixed(2)}` : "",
-    `isUAE=${isUAE}`,
-  );
 
   return { orderId: completed.name, numericId: completed.id };
 }

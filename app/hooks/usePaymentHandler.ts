@@ -1,7 +1,7 @@
 "use client";
 import type { CustomerInfo, CheckoutPayload } from "@/types/checkout.types";
 import type { PaymentMethod, ShippingRate, DiscountResult, Step } from "@/types/checkout.types";
-
+import {toast} from 'sonner'
 interface UsePaymentHandlersOptions {
   items: CheckoutPayload["items"];
   currency: string;
@@ -178,7 +178,9 @@ async function startTabby(customer: CustomerInfo) {
       setOrderId(data.orderId);
       setStep("cod-success" as Step);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      toast.error(msg);
+  setError(msg);
     } finally {
       setLoading(false);
     }
