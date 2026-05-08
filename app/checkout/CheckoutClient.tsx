@@ -22,6 +22,7 @@ import { useAddress } from "../hooks/useAddress";
 import { useShippingRates } from "../hooks/useShippingRate";
 import { useCheckoutTotals } from "../hooks/useCheckoutTotal";
 import { usePaymentHandlers } from "../hooks/usePaymentHandler";
+import { toast } from "sonner";
 
 import Header from "../ui/header";
 import { ContactSection } from "../ui/contact-section";
@@ -35,7 +36,6 @@ countriesLib.registerLocale(en);
 
 export default function CheckoutClient({
   payload,
-  
 }: {
   payload: CheckoutPayload;
 }) {
@@ -184,9 +184,24 @@ export default function CheckoutClient({
   }
 
   function handlePayNow() {
-    if (!selectedRate) setShippingError("Please select a shipping method");
-    if (!method) setPaymentError("Please select a payment method");
-    if (!selectedRate || !method) return;
+    console.log("=== PAY NOW CLICKED ===");
+    console.log("method:", method);
+    console.log("selectedRate:", selectedRate);
+    console.log("phone value:", methods.getValues("phone"));
+    console.log("all values:", methods.getValues());
+    console.log("form errors:", methods.formState.errors);
+    console.log("shippingReady:", shippingReady);
+    console.log("hasAddresses:", hasAddresses);
+    console.log("useNewAddress:", address.useNewAddress);
+    console.log("selectedAddressId:", address.selectedAddressId);
+    if (!method) {
+      toast.error("Please select a payment method");
+      return;
+    }
+    if (!selectedRate) {
+      toast.error("Please select a shipping method");
+      return;
+    }
 
     if (hasAddresses && !address.useNewAddress && address.selectedAddressId) {
       dispatchPayment(method, getOrderCustomer());
@@ -212,8 +227,11 @@ export default function CheckoutClient({
         dispatchPayment(method, freshCustomer);
       },
       (validationErrors) => {
-        console.log("[Checkout] Validation errors:", validationErrors);
-        setError("Please fill in all required fields above.");
+        const firstError = Object.values(validationErrors)[0];
+        toast.error(
+          (firstError as any)?.message ||
+            "Please fill in all required fields to continue.",
+        );
       },
     )();
   }
@@ -312,16 +330,10 @@ export default function CheckoutClient({
                           {error}
                         </div>
                       )}
-
                       <button
                         type="button"
                         onClick={handlePayNow}
-                        disabled={
-                          !method ||
-                          loading ||
-                          (!shippingReady &&
-                            !(hasAddresses && !address.useNewAddress))
-                        }
+                        disabled={!method || loading}
                         className={`w-full bg-primary rounded-[6px] py-4 text-base font-semibold text-white transition-all ${
                           !method || loading
                             ? "bg-[#aaa] cursor-not-allowed"

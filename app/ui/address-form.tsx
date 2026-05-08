@@ -300,7 +300,7 @@ export function AddressForm({
             placeholder={labels?.phone ?? "Phone"}
             value={phoneValue ?? ""}
             onChange={(val) => {
-              setValue("phone", val);
+              setValue("phone", val ?? "");
               trigger("phone");
             }}
             error={!!errors.phone}

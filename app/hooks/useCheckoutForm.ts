@@ -37,13 +37,18 @@ export function useCheckoutForm(prefill: CheckoutPayload["customer"]) {
   const resolver = (async (data, context, options) => {
     // Keep countryCode ref in sync from form data directly
     countryCodeRef.current = data.countryCode || "AE"; // ← add
-    return zodResolver(
-      checkoutSchemaWithFlags(
-        provinceRequiredRef.current,
-        zipRequiredRef.current,
-        countryCodeRef.current,  
-      ),
-    )(data, context, options);
+     const sanitized = {
+    ...data,
+    phone: data.phone ?? "",
+  };
+
+  return zodResolver(
+    checkoutSchemaWithFlags(
+      provinceRequiredRef.current,
+      zipRequiredRef.current,
+      countryCodeRef.current,
+    ),
+  )(sanitized, context, options);
   }) as Resolver<CheckoutFormValues>;
 
   const methods = useForm<CheckoutFormValues>({
