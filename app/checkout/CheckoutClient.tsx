@@ -188,11 +188,17 @@ export default function CheckoutClient({
 
   function handlePayNow() {
     if (!method) {
-      toast.error("Please select a payment method");
+      toast.error("Please select a payment method", {
+        duration: 6000,
+        className: "bg-red-500! text-red-50!",
+      });
       return;
     }
     if (!selectedRate) {
-      toast.error("Please select a shipping method");
+      toast.error("Please select a shipping method", {
+        duration: 6000,
+        className: "bg-red-500! text-red-50!",
+      });
       return;
     }
 
@@ -224,6 +230,7 @@ export default function CheckoutClient({
         toast.error(
           (firstError as any)?.message ||
             "Please fill in all required fields to continue.",
+          { duration: 6000, className: "bg-red-500! text-red-50!" },
         );
       },
     )();
@@ -262,84 +269,69 @@ export default function CheckoutClient({
             <div className="min-h-[calc(100vh-65px)]">
               <main className="w-full flex container py-10 justify-end">
                 <div className="w-full max-w-lg">
-                  {step === "cod-success" ? (
-                    <CODSuccess
-                      orderId={orderId}
-                      phone={getOrderCustomer().phone}
-                      email={customer.email}
-                    />
-                  ) : (
-                    <>
-                      {/* No more props — these components read from context */}
-                      <ContactSection isLoggedIn={isLoggedIn} />
+                  <ContactSection isLoggedIn={isLoggedIn} />
 
-                      <DeliverySection
-                        isLoggedIn={isLoggedIn}
-                        hasAddresses={hasAddresses}
-                        savedAddresses={address.savedAddresses}
-                        defaultAddr={address.defaultAddr}
-                        selectedAddressId={address.selectedAddressId}
-                        useNewAddress={address.useNewAddress}
-                        onSelectAddress={address.setSelectedAddressId}
-                        onSaveNewAddress={address.handleSaveNewAddress}
-                        onUseNewAddress={address.setUseNewAddress}
-                        onRequiredChange={onRequiredChange}
-                      />
+                  <DeliverySection
+                    isLoggedIn={isLoggedIn}
+                    hasAddresses={hasAddresses}
+                    savedAddresses={address.savedAddresses}
+                    defaultAddr={address.defaultAddr}
+                    selectedAddressId={address.selectedAddressId}
+                    useNewAddress={address.useNewAddress}
+                    onSelectAddress={address.setSelectedAddressId}
+                    onSaveNewAddress={address.handleSaveNewAddress}
+                    onUseNewAddress={address.setUseNewAddress}
+                    onRequiredChange={onRequiredChange}
+                  />
 
-                      <ShippingMethodSection
-                        rates={shippingRates}
-                        selectedRate={selectedRate}
-                        loading={ratesLoading}
-                        error={shippingError}
-                        onSelect={(rate) => {
-                          setSelectedRate(rate);
-                          setShippingError("");
-                        }}
-                      />
+                  <ShippingMethodSection
+                    rates={shippingRates}
+                    selectedRate={selectedRate}
+                    loading={ratesLoading}
+                    error={shippingError}
+                    onSelect={(rate) => {
+                      setSelectedRate(rate);
+                      setShippingError("");
+                    }}
+                  />
 
-                      {/* PaymentSection reads method/setMethod/totals from context */}
-                      <PaymentSection
-                        error={paymentError}
-                        isTabbyAvailable={isTabbySupported}
-                        isTamaraAvailable={isTamaraSupported}
-                        onChange={(m) => {
-                          setMethod(m);
-                          setPaymentError("");
-                        }}
-                      />
+                  {/* PaymentSection reads method/setMethod/totals from context */}
+                  <PaymentSection
+                    error={paymentError}
+                    isTabbyAvailable={isTabbySupported}
+                    isTamaraAvailable={isTamaraSupported}
+                    onChange={(m) => {
+                      setMethod(m);
+                      setPaymentError("");
+                    }}
+                  />
 
-                      <button
-                        type="button"
-                        onClick={handlePayNow}
-                        disabled={!method || loading || discountLoading}
-                        className={`w-full bg-primary disabled:bg-neutral-300 rounded-[6px] py-4 text-base font-semibold text-white transition-all ${
-                          !method || loading
-                            ? "bg-[#aaa] cursor-not-allowed"
-                            : "bg-primary hover:bg-primary/90 active:scale-[0.99]"
-                        }`}
-                      >
-                        {loading ? (
-                          <span className="flex gap-2 items-center justify-center">
-                            <Spinner color={"white"} size={24} stroke={1.5} />
-                            Processing payment
-                          </span>
-                        ) : method === "stripe" ? (
-                          "Pay now"
-                        ) : (
-                          "Place order"
-                        )}
-                      </button>
+                  <button
+                    type="button"
+                    onClick={handlePayNow}
+                    disabled={loading || discountLoading}
+                    className={`w-full bg-primary disabled:bg-neutral-300 rounded-md cursor-pointer py-4 text-base font-semibold text-white transition-all `}
+                  >
+                    {loading ? (
+                      <span className="flex gap-2 items-center justify-center">
+                        <Spinner color={"white"} size={24} stroke={1.5} />
+                        Processing payment
+                      </span>
+                    ) : method === "stripe" ? (
+                      "Pay now"
+                    ) : (
+                      "Place order"
+                    )}
+                  </button>
 
-                      <div className="mt-6 flex justify-center gap-6 text-xs text-[#aaa]">
-                        <a href="#" className="hover:text-[#555]">
-                          Privacy policy
-                        </a>
-                        <a href="#" className="hover:text-[#555]">
-                          Terms of service
-                        </a>
-                      </div>
-                    </>
-                  )}
+                  <div className="mt-6 flex justify-center gap-6 text-xs text-[#aaa]">
+                    <a href="#" className="hover:text-[#555]">
+                      Privacy policy
+                    </a>
+                    <a href="#" className="hover:text-[#555]">
+                      Terms of service
+                    </a>
+                  </div>
                 </div>
               </main>
             </div>

@@ -18,7 +18,39 @@ interface UsePaymentHandlersOptions {
   setOrderId: (v: string) => void;
   setStep: (v: Step) => void;
 }
-function getFriendlyStripeError(raw: string, currency: string): string {
+
+export function usePaymentHandlers({
+  items,
+  currency,
+  payload,
+  shippingCost,
+  shippingCostAED,
+  codFeeAED,
+  selectedRate,
+  discountResult,
+  discountAmount,
+  aedToBase,
+  setLoading,
+  setError,
+  setOrderId,
+  setStep,
+}: UsePaymentHandlersOptions) {
+  // ── Shared discount payload ──────────────────────────────────────────────
+  const discountPayload = discountResult?.valid
+    ? {
+        discountCode:   discountResult.code,
+        discountAmount,
+        discountType:   discountResult.type,
+      }
+    : { discountCode: undefined, discountAmount: 0, discountType: null };
+
+    const cancelUrl = typeof window !== "undefined"
+  ? `${window.location.origin}${window.location.pathname}${
+      payload.token ? `?token=${payload.token}` : ""
+    }`
+  : "";
+  // ── Stripe ───────────────────────────────────────────────────────────────
+  function getFriendlyStripeError(raw: string, currency: string): string {
   const msg = raw.toLowerCase();
 
   if (msg.includes("invalid currency") || msg.includes("currency"))
@@ -53,37 +85,6 @@ function getFriendlyStripeError(raw: string, currency: string): string {
 
   return "Payment failed. Please try again or use a different payment method.";
 }
-export function usePaymentHandlers({
-  items,
-  currency,
-  payload,
-  shippingCost,
-  shippingCostAED,
-  codFeeAED,
-  selectedRate,
-  discountResult,
-  discountAmount,
-  aedToBase,
-  setLoading,
-  setError,
-  setOrderId,
-  setStep,
-}: UsePaymentHandlersOptions) {
-  // ── Shared discount payload ──────────────────────────────────────────────
-  const discountPayload = discountResult?.valid
-    ? {
-        discountCode:   discountResult.code,
-        discountAmount,
-        discountType:   discountResult.type,
-      }
-    : { discountCode: undefined, discountAmount: 0, discountType: null };
-
-    const cancelUrl = typeof window !== "undefined"
-  ? `${window.location.origin}${window.location.pathname}${
-      payload.token ? `?token=${payload.token}` : ""
-    }`
-  : "";
-  // ── Stripe ───────────────────────────────────────────────────────────────
   async function startStripe(customer: CustomerInfo) {
     setLoading(true);
     setError("");
@@ -175,6 +176,26 @@ async function startTabby(customer: CustomerInfo) {
 }
 
   // ── Tamara ───────────────────────────────────────────────────────────────
+  function getFriendlyTamaraError(raw: string): string {
+  const msg = raw.toLowerCase();
+
+  if (msg.includes("not available") || msg.includes("not supported"))
+    return "Tamara is not available for this order. Please try a different payment method.";
+
+  if (msg.includes("limit") || msg.includes("amount"))
+    return "Your order total is outside Tamara's supported range. Please try a different payment method.";
+
+  if (msg.includes("country") || msg.includes("region"))
+    return "Tamara is not available in your region.";
+
+  if (msg.includes("network") || msg.includes("fetch"))
+    return "A network error occurred. Please check your connection and try again.";
+
+  if (msg.includes("tamara session failed") || msg.includes("checkout failed"))
+    return "Unable to start Tamara checkout.";
+
+  return "Payment failed. Please try again or use a different payment method.";
+}
   async function startTamara(customer: CustomerInfo) {
   setLoading(true);
   setError("");
@@ -191,15 +212,15 @@ async function startTabby(customer: CustomerInfo) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        items:          itemsInAED,          // AED prices — stored in Redis for Shopify
-        currency,                            // display currency — used for Tamara session amount
+        items:          itemsInAED,         
+        currency,                           
         customer,
         token:          payload.token,
-        shipping:       shippingCostAED,     // AED — stored in Redis for Shopify
+        shipping:       shippingCostAED,    
         shippingHandle: selectedRate?.handle,
         cancelUrl,
         ...discountPayload,
-        discountAmount: discountAmountAED,   // AED — stored in Redis for Shopify
+        discountAmount: discountAmountAED,  
       }),
     });
  
@@ -207,8 +228,14 @@ async function startTabby(customer: CustomerInfo) {
     if (!res.ok) throw new Error(data.error || "Tamara checkout failed");
     window.location.href = data.url;
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Something went wrong";
+   const raw = err instanceof Error ? err.message : "";
+    const msg = getFriendlyTamaraError(raw);
     setError(msg);
+    toast.error(msg, {
+      description: "If the problem persists, please contact support.",
+      duration: 6000,
+      className:'bg-red-500! text-red-50!'
+    });
     setLoading(false);
   }
 }
@@ -247,7 +274,8 @@ async function startTabby(customer: CustomerInfo) {
       setStep("cod-success" as Step);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Something went wrong";
-      toast.error(msg);
+      toast.error(msg, {duration: 6000,
+        className:'bg-red-500! text-red-50!'});
   setError(msg);
     } finally {
       setLoading(false);
