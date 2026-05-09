@@ -308,7 +308,7 @@ export default function CheckoutClient({
                   <button
                     type="button"
                     onClick={handlePayNow}
-                    disabled={loading || discountLoading}
+                    disabled={loading || discountLoading || !method}
                     className={`w-full bg-primary disabled:bg-neutral-300 rounded-md cursor-pointer py-4 text-base font-semibold text-white transition-all `}
                   >
                     {loading ? (
