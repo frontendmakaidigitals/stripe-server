@@ -78,6 +78,11 @@ export function usePaymentHandlers({
       }
     : { discountCode: undefined, discountAmount: 0, discountType: null };
 
+    const cancelUrl = typeof window !== "undefined"
+  ? `${window.location.origin}${window.location.pathname}${
+      payload.token ? `?token=${payload.token}` : ""
+    }`
+  : "";
   // ── Stripe ───────────────────────────────────────────────────────────────
   async function startStripe(customer: CustomerInfo) {
     setLoading(true);
@@ -96,7 +101,7 @@ export function usePaymentHandlers({
           token:             payload.token,
           shipping:          shippingCost,       // display currency, for Stripe line item
           shippingHandle:    selectedRate?.handle,
-          cancelUrl:         window.location.href,
+          cancelUrl,
           aedToBase,
           shippingAED:       shippingCostAED,
           discountAmountAED,
@@ -144,7 +149,7 @@ async function startTabby(customer: CustomerInfo) {
         token:          payload.token,
         shipping:       shippingCostAED,     // ← AED for Shopify
         shippingHandle: selectedRate?.handle,
-        cancelUrl:      window.location.href,
+        cancelUrl,
         ...discountPayload,
         discountAmount: discountAmountAED,   // ← AED for Shopify
         // Pass display-currency values separately so Tabby session amount is correct
@@ -192,7 +197,7 @@ async function startTabby(customer: CustomerInfo) {
         token:          payload.token,
         shipping:       shippingCostAED,     // AED — stored in Redis for Shopify
         shippingHandle: selectedRate?.handle,
-        cancelUrl:      window.location.href,
+        cancelUrl,
         ...discountPayload,
         discountAmount: discountAmountAED,   // AED — stored in Redis for Shopify
       }),
