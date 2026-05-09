@@ -176,7 +176,7 @@ export default function CheckoutClient({
           phone: saved.phone || formValues.phone || customer.phone,
           address: [saved.address1, saved.address2].filter(Boolean).join(", "),
           city: saved.city,
-          country: toCountryCode(saved.country) || saved.country,
+          country: toCountryCode(saved.country),
           address2: saved.address2 || "",
           province: saved.province || "",
           zip: saved.zip || "",
