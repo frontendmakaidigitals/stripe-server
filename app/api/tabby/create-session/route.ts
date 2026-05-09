@@ -78,8 +78,6 @@ export async function POST(request: NextRequest) {
     }
 
     const merchantCode = getMerchantCode(region);
-    console.log("[Tabby] Merchant code env value:", process.env.TABBY_MERCHANT_KEY_AED);
-    console.log("[Tabby] Merchant code used:", merchantCode);
 
     if (!merchantCode) {
       console.error(`[Tabby] Missing merchant code for region: ${countryCode}`);
