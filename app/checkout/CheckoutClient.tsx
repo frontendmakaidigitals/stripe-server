@@ -1,6 +1,6 @@
 // app/checkout/CheckoutClient.tsx
 "use client";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { FormProvider } from "react-hook-form";
 import countriesLib from "i18n-iso-countries";
 import en from "i18n-iso-countries/langs/en.json";
@@ -15,7 +15,7 @@ import type { PaymentMethod, Step } from "@/types/checkout.types";
 import { isTabbyAvailable } from "../lib/tabby.config";
 import { toCountryCode } from "../lib/checkout-utils";
 import { CheckoutContext } from "./checkoutContext";
-
+import { fetchShippingRates } from "../lib/fetch-shippingrates";
 import { useExchangeRate } from "../hooks/useExchangeRate";
 import { useCheckoutForm } from "../hooks/useCheckoutForm";
 import { useAddress } from "../hooks/useAddress";
@@ -70,42 +70,33 @@ export default function CheckoutClient({
   const { methods, onRequiredChange } = useCheckoutForm(prefill);
   const hasAddresses = isLoggedIn && (prefill.addresses ?? []).length > 0;
 
-  const shippingRatesApi = useShippingRates({
-    currency,
-    total,
-    aedToBase,
-    items,
-    hasAddresses,
-    useNewAddress: false,
-    selectedAddressId: "",
-    savedAddresses: prefill.addresses ?? [],
-    customer,
-  });
+  const boundFetchShippingRates = useCallback(
+    (addr: CustomerInfo) =>
+      fetchShippingRates(addr, { currency, total, aedToBase, items }).then(
+        () => {},
+      ),
+    [currency, total, aedToBase, items],
+  );
 
   const address = useAddress({
     customerId: customer.id,
     initialAddresses: prefill.addresses ?? [],
     customer,
-    fetchShippingRates: shippingRatesApi.fetchShippingRates,
+    fetchShippingRates: boundFetchShippingRates,
   });
 
-  const {
-    shippingRates,
-    selectedRate,
-    setSelectedRate,
-    ratesLoading,
-    fetchShippingRates,
-  } = useShippingRates({
-    currency,
-    total,
-    aedToBase,
-    items,
-    hasAddresses,
-    useNewAddress: address.useNewAddress,
-    selectedAddressId: address.selectedAddressId,
-    savedAddresses: address.savedAddresses,
-    customer,
-  });
+  const { shippingRates, selectedRate, setSelectedRate, ratesLoading } =
+    useShippingRates({
+      currency,
+      total,
+      aedToBase,
+      items,
+      hasAddresses,
+      useNewAddress: address.useNewAddress,
+      selectedAddressId: address.selectedAddressId,
+      savedAddresses: address.savedAddresses,
+      customer,
+    });
 
   const currentCountry = (() => {
     let raw: any;
@@ -145,14 +136,26 @@ export default function CheckoutClient({
     setStep,
     aedToBase,
   });
+  const [discountLoading, setDiscountLoading] = useState(false);
 
   async function handleApplyDiscount(code: string) {
-    const res = await fetch("/api/discount/validate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, subtotal: total }),
-    });
-    setDiscountResult(await res.json());
+    try {
+      setDiscountLoading(true);
+
+      const res = await fetch("/api/discount/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, subtotal: total }),
+      });
+
+      const data = await res.json();
+
+      setDiscountResult(data);
+    } catch (error) {
+      console.error("Discount validation failed:", error);
+    } finally {
+      setDiscountLoading(false);
+    }
   }
 
   function getOrderCustomer(): CustomerInfo {
@@ -184,16 +187,6 @@ export default function CheckoutClient({
   }
 
   function handlePayNow() {
-    console.log("=== PAY NOW CLICKED ===");
-    console.log("method:", method);
-    console.log("selectedRate:", selectedRate);
-    console.log("phone value:", methods.getValues("phone"));
-    console.log("all values:", methods.getValues());
-    console.log("form errors:", methods.formState.errors);
-    console.log("shippingReady:", shippingReady);
-    console.log("hasAddresses:", hasAddresses);
-    console.log("useNewAddress:", address.useNewAddress);
-    console.log("selectedAddressId:", address.selectedAddressId);
     if (!method) {
       toast.error("Please select a payment method");
       return;
@@ -235,16 +228,6 @@ export default function CheckoutClient({
       },
     )();
   }
-
-  const formValues = methods.watch();
-  const shippingReady = hasAddresses
-    ? Boolean(address.selectedAddressId) || address.useNewAddress
-    : Boolean(
-        formValues.address1 &&
-        formValues.city &&
-        formValues.phone &&
-        formValues.firstName,
-      );
 
   const isTabbySupported = isTabbyAvailable(totals.grandTotal, currency);
   const TAMARA_CURRENCIES = ["AED", "KWD", "SAR"];
@@ -328,8 +311,8 @@ export default function CheckoutClient({
                       <button
                         type="button"
                         onClick={handlePayNow}
-                        disabled={!method || loading}
-                        className={`w-full bg-primary rounded-[6px] py-4 text-base font-semibold text-white transition-all ${
+                        disabled={!method || loading || discountLoading}
+                        className={`w-full bg-primary disabled:bg-neutral-300 rounded-[6px] py-4 text-base font-semibold text-white transition-all ${
                           !method || loading
                             ? "bg-[#aaa] cursor-not-allowed"
                             : "bg-primary hover:bg-primary/90 active:scale-[0.99]"
@@ -366,6 +349,7 @@ export default function CheckoutClient({
               selectedRate={selectedRate}
               ratesLoading={ratesLoading}
               onApplyDiscount={handleApplyDiscount}
+              discountLoading={discountLoading}
             />
           </div>
         </div>

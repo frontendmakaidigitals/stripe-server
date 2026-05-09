@@ -5,6 +5,7 @@ import type { CustomerInfo, ShopifyAddress } from "@/types/checkout.types";
 import type { NewAddrForm } from "@/types/checkout.types";
 import { AddressForm } from "./address-form";
 import { useCheckoutContext } from "../checkout/checkoutContext";
+import { ArrowLeft } from "lucide-react";
 
 type Props = {
   isLoggedIn: boolean;
@@ -112,7 +113,7 @@ export function DeliverySection({
 
       {showSavedAddresses && (
         <>
-          <div className="rounded-lg overflow-hidden divide-y divide-sky-100 mb-3">
+          <div className="rounded-lg overflow-hidden max-h-60 divide-y divide-sky-100 mb-3">
             {savedAddresses.map((addr: ShopifyAddress) => (
               <label
                 key={addr.id}
@@ -169,9 +170,9 @@ export function DeliverySection({
                 setShowAddressForm(false);
                 setSaveError("");
               }}
-              className="text-sm text-[#1a6cff] hover:underline mb-3 flex items-center gap-1"
+              className="flex items-center text-sm text-[#1a6cff] hover:underline mb-3 gap-1"
             >
-              ← Use saved address
+              <ArrowLeft /> Use saved address
             </button>
           )}
 

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { fmt } from "../lib/checkout-utils";
 import type { ShippingRate } from "@/types/checkout.types";
 import { Spinner } from "@/components/ui/spinner";
-
+import { Skeleton } from "@/components/ui/skeleton";
 const VAT_RATE = 0.05;
 const VAT_DIVISOR = 1 + VAT_RATE; // 1.05
 
@@ -13,14 +13,14 @@ export function OrderSummary({
   selectedRate,
   ratesLoading,
   onApplyDiscount,
+  discountLoading,
 }: {
   selectedRate: ShippingRate | null;
   ratesLoading: boolean;
   onApplyDiscount: (code: string) => Promise<void>;
+  discountLoading: boolean;
 }) {
   const [discountCode, setDiscountCode] = useState("");
-  const [loading, setLoading] = useState(false);
-
   const { currency, totals, method, discountResult, items, total, customer } =
     useCheckoutContext();
 
@@ -81,11 +81,12 @@ export function OrderSummary({
 
   async function handleApply() {
     if (!discountCode.trim()) return;
-    setLoading(true);
     try {
       await onApplyDiscount(discountCode);
+      setDiscountCode("");
+    } catch (error) {
+      console.error(error);
     } finally {
-      setLoading(false);
     }
   }
 
@@ -127,7 +128,7 @@ export function OrderSummary({
         {/* Discount code */}
         <div className="flex gap-2 mb-4">
           <input
-            className="flex-1 border-2 border-[#d4d4d4] rounded-md p-4 text-sm bg-white outline-none focus:border-primary transition-colors"
+            className="flex-1 border-2 border-[#d4d4d4] rounded-md p-3 text-sm bg-white outline-none focus:border-primary transition-colors"
             placeholder="Discount code"
             value={discountCode}
             onChange={(e) => setDiscountCode(e.target.value)}
@@ -135,10 +136,10 @@ export function OrderSummary({
           />
           <button
             onClick={handleApply}
-            disabled={loading || !discountCode.trim()}
-            className="border disabled:bg-gray-400 border-[#d4d4d4] flex justify-center items-center rounded-md w-18 py-2.5 text-sm font-medium bg-primary text-white transition-all"
+            disabled={discountLoading || !discountCode.trim()}
+            className="border disabled:bg-neutral-300 flex justify-center items-center rounded-md w-18 py-2.5 text-sm font-medium bg-primary text-white transition-all"
           >
-            {loading ? <Spinner size={24} stroke={1.5} /> : "Apply"}
+            {discountLoading ? <Spinner size={24} stroke={1.5} /> : "Apply"}
           </button>
         </div>
 
@@ -198,18 +199,24 @@ export function OrderSummary({
           )}
 
           {/* Shipping ex-VAT */}
-          <div className="flex justify-between text-sm text-[#555]">
-            <span>Shipping {isUAE ? " (excl. VAT)" : ""}</span>
-            <span className="font-medium text-[#1a1a1a]">
-              {ratesLoading
-                ? "Calculating…"
-                : !selectedRate
+          {ratesLoading ? (
+            <div className="flex justify-between items-center gap-4">
+              <Skeleton className="h-5 w-2/7 " />
+              <Skeleton className="h-5 w-1/6 " />
+            </div>
+          ) : (
+            <div className="flex justify-between text-sm text-[#555]">
+              <span>Shipping {isUAE ? " (excl. VAT)" : ""}</span>
+
+              <span className="font-medium text-[#1a1a1a]">
+                {!selectedRate
                   ? "—"
                   : shippingExclVAT === 0
                     ? "FREE"
                     : fmt(shippingExclVAT, currency)}
-            </span>
-          </div>
+              </span>
+            </div>
+          )}
 
           {/* VAT row — sum of all VAT portions */}
           {isUAE && (

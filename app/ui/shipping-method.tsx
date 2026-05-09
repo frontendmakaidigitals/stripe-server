@@ -3,7 +3,7 @@
 import { fmt } from "../lib/checkout-utils";
 import type { ShippingRate } from "@/types/checkout.types";
 import { useCheckoutContext } from "../checkout/checkoutContext";
-
+import { Skeleton } from "@/components/ui/skeleton";
 type Props = {
   rates: ShippingRate[];
   selectedRate: ShippingRate | null;
@@ -26,7 +26,10 @@ export function ShippingMethodSection({
       <p className="text-neutral-600 text-sm mb-3">Shipping method</p>
 
       {loading ? (
-        <p className="text-sm text-gray-400">Fetching shipping rates…</p>
+        <div className="space-y-1">
+          <Skeleton className="w-full h-20" />
+          <Skeleton className="w-full h-20" />
+        </div>
       ) : rates.length === 0 ? (
         <p className="text-sm text-gray-400">
           Enter your address to see shipping options.

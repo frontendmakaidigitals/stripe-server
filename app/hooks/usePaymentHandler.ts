@@ -110,15 +110,16 @@ export function usePaymentHandlers({
   
   // ← friendly message for unsupported currency
         const raw = err instanceof Error ? err.message : "";
-  const msg = getFriendlyStripeError(raw, currency);
-  setError(msg);
-  toast.error(msg, {
-    description: "If the problem persists, please contact support.",
-    duration: 6000,
-  });
-  setLoading(false);
-    }
-  }
+      const msg = getFriendlyStripeError(raw, currency);
+      setError(msg);
+      toast.error(msg, {
+        description: "If the problem persists, please contact support.",
+        duration: 6000,
+        className:'bg-red-500! text-red-50!'
+      });
+      setLoading(false);
+        }
+      }
 
   // ── Tabby ────────────────────────────────────────────────────────────────
 async function startTabby(customer: CustomerInfo) {
@@ -157,6 +158,13 @@ async function startTabby(customer: CustomerInfo) {
     window.location.href = data.url;
   } catch (err: unknown) {
     setError(err instanceof Error ? err.message : "Something went wrong");
+
+    toast.error('Payment unavailable',{
+        description: err instanceof Error ? err.message : "Something went wrong",
+        duration: 6000,
+        className:'bg-red-500! text-red-50!'
+      });
+       
     setLoading(false);
   }
 }
