@@ -113,7 +113,7 @@ export function DeliverySection({
 
       {showSavedAddresses && (
         <>
-          <div className="rounded-lg overflow-hidden max-h-60 divide-y divide-sky-100 mb-3">
+          <div className="rounded-lg overflow-auto max-h-60 divide-y divide-sky-100 mb-3">
             {savedAddresses.map((addr: ShopifyAddress) => (
               <label
                 key={addr.id}
