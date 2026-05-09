@@ -308,8 +308,10 @@ export default function CheckoutClient({
                   <button
                     type="button"
                     onClick={handlePayNow}
-                    disabled={loading || discountLoading || !method}
-                    className={`w-full bg-primary disabled:bg-neutral-300 rounded-md cursor-pointer py-4 text-base font-semibold text-white transition-all `}
+                    disabled={
+                      loading || discountLoading || shippingRates.length === 0
+                    }
+                    className={`w-full bg-primary disabled:bg-neutral-300 disabled:cursor-not-allowed rounded-md cursor-pointer py-4 text-base font-semibold text-white transition-all `}
                   >
                     {loading ? (
                       <span className="flex gap-2 items-center justify-center">
