@@ -35,14 +35,12 @@ function corsHeaders(origin: string | null) {
 // ── IP extraction (custom server — trust X-Real-IP set by nginx) ──────────────
 function getClientIp(request: NextRequest): string {
   const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) {
-    return forwarded.split(",")[0].trim();
-  }
-  console.log("[IP Debug]", {
-  "x-forwarded-for": request.headers.get("x-forwarded-for"),
-  "x-real-ip":       request.headers.get("x-real-ip"),
-});
-  return request.headers.get("x-real-ip")?.trim() ?? "unknown";
+  const realIp    = request.headers.get("x-real-ip");
+
+  console.log("[IP Debug]", { "x-forwarded-for": forwarded, "x-real-ip": realIp }); // ← move up
+
+  if (forwarded) return forwarded.split(",")[0].trim();
+  return realIp?.trim() ?? "unknown";
 }
 
 
