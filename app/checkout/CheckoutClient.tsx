@@ -46,7 +46,6 @@ export default function CheckoutClient({
   const [step, setStep] = useState<Step>(isLoggedIn ? "shipping" : "contact");
   const [method, setMethod] = useState<PaymentMethod>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
   const [orderId, setOrderId] = useState("");
   const [shippingError, setShippingError] = useState("");
   const [paymentError, setPaymentError] = useState("");
@@ -131,7 +130,6 @@ export default function CheckoutClient({
     discountResult,
     discountAmount: totals.discountAmount,
     setLoading,
-    setError,
     setOrderId,
     setStep,
     aedToBase,
@@ -257,6 +255,7 @@ export default function CheckoutClient({
   return (
     <CheckoutContext.Provider value={contextValue}>
       <FormProvider {...methods}>
+         ̰ ̰
         <div
           style={{ fontFamily: "'Söhne', 'Helvetica Neue', Arial, sans-serif" }}
           className="min-h-screen bg-white text-[#1a1a1a]"

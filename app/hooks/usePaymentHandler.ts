@@ -14,7 +14,7 @@ interface UsePaymentHandlersOptions {
   discountAmount: number;
   aedToBase: number;
   setLoading: (v: boolean) => void;
-  setError: (v: string) => void;
+
   setOrderId: (v: string) => void;
   setStep: (v: Step) => void;
 }
@@ -31,7 +31,6 @@ export function usePaymentHandlers({
   discountAmount,
   aedToBase,
   setLoading,
-  setError,
   setOrderId,
   setStep,
 }: UsePaymentHandlersOptions) {
@@ -87,7 +86,6 @@ export function usePaymentHandlers({
 }
   async function startStripe(customer: CustomerInfo) {
     setLoading(true);
-    setError("");
     try {
       const discountAmountAED =
         aedToBase > 0 ? discountAmount / aedToBase : discountAmount;
@@ -117,7 +115,6 @@ export function usePaymentHandlers({
   // ← friendly message for unsupported currency
         const raw = err instanceof Error ? err.message : "";
       const msg = getFriendlyStripeError(raw, currency);
-      setError(msg);
       toast.error(msg, {
         description: "If the problem persists, please contact support.",
         duration: 6000,
@@ -130,7 +127,6 @@ export function usePaymentHandlers({
   // ── Tabby ────────────────────────────────────────────────────────────────
 async function startTabby(customer: CustomerInfo) {
   setLoading(true);
-  setError("");
   try {
     const itemsInAED = items.map((item) => ({
       ...item,
@@ -163,7 +159,6 @@ async function startTabby(customer: CustomerInfo) {
     if (!res.ok) throw new Error(data.error || "Tabby checkout failed");
     window.location.href = data.url;
   } catch (err: unknown) {
-    setError(err instanceof Error ? err.message : "Something went wrong");
 
     toast.error('Payment unavailable',{
         description: err instanceof Error ? err.message : "Something went wrong",
@@ -198,7 +193,7 @@ async function startTabby(customer: CustomerInfo) {
 }
   async function startTamara(customer: CustomerInfo) {
   setLoading(true);
-  setError("");
+
   try {
     const itemsInAED = items.map((item) => ({
       ...item,
@@ -230,7 +225,7 @@ async function startTabby(customer: CustomerInfo) {
   } catch (err: unknown) {
    const raw = err instanceof Error ? err.message : "";
     const msg = getFriendlyTamaraError(raw);
-    setError(msg);
+
     toast.error(msg, {
       description: "If the problem persists, please contact support.",
       duration: 6000,
@@ -243,7 +238,6 @@ async function startTabby(customer: CustomerInfo) {
   // ── Cash on Delivery ─────────────────────────────────────────────────────
   async function placeCODOrder(customer: CustomerInfo) {
     setLoading(true);
-    setError("");
     try {
       const itemsInAED = items.map((item) => ({
         ...item,
@@ -276,7 +270,7 @@ async function startTabby(customer: CustomerInfo) {
       const msg = err instanceof Error ? err.message : "Something went wrong";
       toast.error(msg, {duration: 6000,
         className:'bg-red-500! text-red-50!'});
-  setError(msg);
+
     } finally {
       setLoading(false);
     }
