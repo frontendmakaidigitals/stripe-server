@@ -319,10 +319,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (jwtToken) await markTokenUsed(jwtToken);
-    if (referenceId) {
-      await redis.del(`tabby_display:${referenceId}`);
-      await redis.del(`tabby_checkout:${referenceId}`); // ← cleanup old key too
-    }
 
   } catch (err) {
     await redis.del(idempotencyKey);

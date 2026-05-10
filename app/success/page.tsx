@@ -61,11 +61,23 @@ function SuccessContent() {
 
       try {
         const r = await fetch(`/api/order/success?${params.toString()}`);
+
+        // Stop if 404 — don't overwrite existing data with empty
+        if (r.status === 404) {
+          setLoading(false);
+          return;
+        }
+
         const data = await r.json();
-        setOrderData(data);
+
+        // Only update state if we got valid data
+        if (data && !data.error) {
+          setOrderData(data);
+        }
+
         setLoading(false);
 
-        // Keep polling until orderId appears (webhook may not have fired yet)
+        // Keep polling only if orderId is still missing
         if (!data.orderId && attempts < 10) {
           attempts++;
           setTimeout(poll, 3000);
