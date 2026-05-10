@@ -267,15 +267,24 @@ async function startTabby(customer: CustomerInfo) {
       setOrderId(data.orderId);
       setStep("cod-success" as Step);
           const params = new URLSearchParams({
-      orderId:   data.orderId,
-      provider:  "cod",
-      name:      customer.name,
-      email:     customer.email,
-      phone:     customer.phone,
-      address:   customer.address,
-      city:      customer.city,
-      country:   customer.country,
-    });
+  orderId:        data.orderId,
+  provider:       "cod",
+  name:           customer.name,
+  email:          customer.email,
+  phone:          customer.phone,
+  address:        customer.address,
+  city:           customer.city,
+  country:        customer.country,
+  // Add these:
+  items:          JSON.stringify(itemsInAED),
+  currency:       "AED",
+  shipping:       String(shippingCostAED),
+  codFee:         String(codFeeAED),
+  shippingHandle: selectedRate?.handle ?? "",
+  discountAmount: String(discountAmountAED),
+  discountCode:   discountPayload?.discountCode ?? "",
+});
+window.location.href = `/success?${params.toString()}`;
     window.location.href = `/success?${params.toString()}`;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Something went wrong";

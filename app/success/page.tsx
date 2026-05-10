@@ -25,6 +25,22 @@ function SuccessContent() {
           city: searchParams.get("city"),
           country: searchParams.get("country"),
           provider: "cod",
+          // Add these:
+          items: JSON.parse(searchParams.get("items") ?? "[]"),
+          currency: searchParams.get("currency") ?? "AED",
+          shipping: Number(searchParams.get("shipping") ?? 0),
+          codFee: Number(searchParams.get("codFee") ?? 0),
+          shippingHandle: searchParams.get("shippingHandle") ?? "",
+          discountAmount: Number(searchParams.get("discountAmount") ?? 0),
+          discountCode: searchParams.get("discountCode") ?? "",
+          customer: {
+            name: searchParams.get("name"),
+            email: searchParams.get("email"),
+            phone: searchParams.get("phone"),
+            address: searchParams.get("address"),
+            city: searchParams.get("city"),
+            country: searchParams.get("country"),
+          },
         }
       : null;
 
