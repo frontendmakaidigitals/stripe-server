@@ -199,7 +199,11 @@ export async function POST(request: NextRequest) {
         { status: 422, headers: CORS_HEADERS },
       );
     }
-
+console.log("[Tabby] Merchant URLs:", JSON.stringify({
+  success: `${baseUrl}/success?provider=tabby&referenceId=${referenceId}`,
+  cancel:  cancelUrl ?? `${baseUrl}/checkout${token ? `?token=${token}` : ""}`,
+  failure: `${baseUrl}/checkout?error=tabby_failed${token ? `&token=${token}` : ""}`,
+}));
     // Store AED values in Redis — webhook uses these to create Shopify order
  await redis.set(
   `tabby_checkout:${referenceId}`,
