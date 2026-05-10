@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { CartItem, CustomerInfo } from "@/types/checkout.types";
-import { Redis } from "@upstash/redis";
+import redis from "@/app/lib/redis";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -8,10 +8,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-const redis = new Redis({
-  url:   process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-});
+
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
@@ -147,23 +144,23 @@ export async function POST(request: NextRequest) {
 
     // Store everything the webhook will need to create the Shopify order.
     // Mirrors the tabby_checkout:{referenceId} pattern exactly.
-   await redis.set(
+  await redis.set(
   `tamara_checkout:${referenceId}`,
   JSON.stringify({
-    items,                        // AED — for Shopify webhook
-    itemsDisplay:    items,       // display currency (same as items for Tamara)
+    items,
+    itemsDisplay:    items,
     customer,
-    currency,                     // display currency
-    shipping,                     // AED
-    shippingDisplay: shipping,    // display currency
+    currency,
+    shipping,
+    shippingDisplay: shipping,
     shippingHandle,
-    discountAmount,               // AED
+    discountAmount,
     discountDisplay: discountAmount,
     discountCode,
     token:           token || "",
     tamaraOrderId:   data.order_id,
   }),
-  { ex: 60 * 60 * 24 },
+  "EX", 60 * 60 * 24,
 );
 
     console.log(

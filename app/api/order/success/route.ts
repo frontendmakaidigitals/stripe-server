@@ -1,11 +1,6 @@
 // app/api/order/success/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { Redis } from "@upstash/redis";
-
-const redis = new Redis({
-  url:   process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-});
+import redis from "@/app/lib/redis";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -67,26 +62,26 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // ── Tabby / Tamara ───────────────────────────────────────────────────────
-    if ((provider === "tabby" || provider === "tamara") && referenceId) {
-      const key  = `${provider}_checkout:${referenceId}`;
-      const data = await redis.get<any>(key);
-      if (!data) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+      if ((provider === "tabby" || provider === "tamara") && referenceId) {
+        const displayKey = `${provider}_display:${referenceId}`;
+        const raw = await redis.get(displayKey);
+        if (!raw) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
-      // Return display currency values for success page
-      // Falls back to AED values if display values not stored (older sessions)
-      return NextResponse.json({
-        ...data,
-        provider,
-        items:          data.itemsDisplay    ?? data.items,
-        currency:       data.currency,
-        shipping:       data.shippingDisplay ?? data.shipping,
-        discountAmount: data.discountDisplay ?? data.discountAmount,
-        discountCode:   data.discountCode    ?? "",
-        shippingHandle: data.shippingHandle  ?? "",
-        email:          data.customer?.email ?? "",
-      });
-    }
+        const data = JSON.parse(raw);
+
+        return NextResponse.json({
+          ...data,
+          provider,
+          items:          data.itemsDisplay    ?? data.items,
+          currency:       data.currency,
+          shipping:       data.shippingDisplay ?? data.shipping,
+          discountAmount: data.discountDisplay ?? data.discountAmount,
+          discountCode:   data.discountCode    ?? "",
+          shippingHandle: data.shippingHandle  ?? "",
+          email:          data.customer?.email ?? "",
+        });
+      }
+
 
     return NextResponse.json({ error: "Missing params" }, { status: 400 });
   } catch (err) {

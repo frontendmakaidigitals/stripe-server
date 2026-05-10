@@ -24,6 +24,8 @@ jobs:
           {
             echo "NEXT_PUBLIC_SHOPIFY_DOMAIN=${{ vars.NEXT_PUBLIC_SHOPIFY_DOMAIN }}"
             echo "NEXT_PUBLIC_URL=${{ vars.NEXT_PUBLIC_URL }}"
+            echo "REDIS_PORT=${{ vars.REDIS_PORT }}"
+            echo "REDIS_HOST=${{ vars.REDIS_HOST }}"
             echo "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ vars.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}"
             echo "UPSTASH_REDIS_REST_URL=${{ vars.UPSTASH_REDIS_REST_URL }}"
             echo "CHECKOUT_TOKEN_SECRET=${{ secrets.CHECKOUT_TOKEN_SECRET }}"

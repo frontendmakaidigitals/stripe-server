@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Redis } from "@upstash/redis";
+import redis from "@/app/lib/redis";
 import type { CartItem, CustomerInfo } from "@/types/checkout.types";
 import { verifyCheckoutToken } from "@/app/lib/checkout-token";
 import { markTokenUsed } from "@/app/lib/used-tokens";
 
 export const runtime = "nodejs";
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-});
 
 // ── Signature verification ─────────────────────────────────────────────────────
 function verifyTabbySignature(request: NextRequest): boolean {
@@ -253,10 +249,7 @@ export async function POST(request: NextRequest) {
   // ── Atomic idempotency check via SET NX ───────────────────────────────────
   const idempotencyKey = `tabby_processed:${tabbyPaymentId}`;
   try {
-    const wasSet = await redis.set(idempotencyKey, "1", {
-      ex: 60 * 60 * 24 * 7,
-      nx: true,
-    });
+   const wasSet = await redis.set(idempotencyKey, "1", "EX", 60 * 60 * 24 * 7, "NX");
 
     if (wasSet === null) {
       console.log("[Tabby webhook] Already processed:", tabbyPaymentId);

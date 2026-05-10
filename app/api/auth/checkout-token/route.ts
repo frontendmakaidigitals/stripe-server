@@ -3,12 +3,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signCheckoutToken } from "@/app/lib/checkout-token";
 import type { CustomerInfo } from "@/types/checkout.types";
-import { Redis } from "@upstash/redis";
+import redis from "@/app/lib/redis";
 
-const redis = new Redis({
-  url:   process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-});
 
 const SHOPIFY_DOMAIN = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN!;
 const SHOPIFY_TOKEN  = process.env.SHOPIFY_ACCESS_TOKEN!;
@@ -52,28 +48,28 @@ async function getCountryFromIp(ip: string): Promise<string> {
 
   // Check cache first
   try {
-    const cached = await redis.get<string>(`ip_country:${ip}`);
-    if (cached) return cached;
-  } catch {
-    // redis failure — continue to live lookup
-  }
+  const cached = await redis.get(`ip_country:${ip}`);
+  if (cached) return cached;
+} catch {
 
-  try {
-    const res = await fetch(`https://ipapi.co/${ip}/country/`, {
-      headers: { "User-Agent": "perfumeoasis-checkout/1.0" },
-      signal:  AbortSignal.timeout(3000), // 3s timeout
-    });
-    if (!res.ok) return "AE";
+}
 
-    const country = (await res.text()).trim();
+try {
+  const res = await fetch(`https://ipapi.co/${ip}/country/`, {
+    headers: { "User-Agent": "perfumeoasis-checkout/1.0" },
+    signal:  AbortSignal.timeout(3000),
+  });
+  if (!res.ok) return "AE";
 
-    // Cache for 24h
-    await redis.set(`ip_country:${ip}`, country, { ex: 60 * 60 * 24 }).catch(() => {});
+  const country = (await res.text()).trim();
 
-    return country;
-  } catch {
-    return "AE"; // fail open — don't block checkout if IP lookup fails
-  }
+  // Cache for 24h
+  await redis.set(`ip_country:${ip}`, country, "EX", 60 * 60 * 24).catch(() => {});
+
+  return country;
+} catch {
+  return "AE";
+}
 }
 
 // ── Rate limiting (10 req/min per IP) ────────────────────────────────────────

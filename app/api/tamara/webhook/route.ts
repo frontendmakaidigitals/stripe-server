@@ -1,21 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
-import { Redis } from "@upstash/redis";
+import redis from "@/app/lib/redis";
 import type { CartItem, CustomerInfo } from "@/types/checkout.types";
 import { markTokenUsed } from "@/app/lib/used-tokens";
 
 export const runtime = "nodejs";
 
-const redis = new Redis({
-  url:   process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-});
-
-// ── JWT verification ───────────────────────────────────────────────────────────
-// Tamara sends tamaraToken as a JWT (HS256) in:
-//   - Authorization: Bearer <tamaraToken>   (header)
-//   - ?tamaraToken=<tamaraToken>            (query param — backup)
-// The secret is your TAMARA_NOTIFICATION_TOKEN, NOT the API key.
 function verifyTamaraToken(request: NextRequest): void {
   const authHeader = request.headers.get("authorization") ?? "";
   const token      = authHeader.replace(/^Bearer\s+/i, "").trim();
@@ -64,6 +54,7 @@ async function captureOrder(
   discountAmount: number,
   currency: string,
 ): Promise<void> {
+
   const toAmount = (val: number) => ({
     amount:   parseFloat(val.toFixed(2)),
     currency: currency.toUpperCase(),
@@ -285,10 +276,11 @@ export async function POST(request: NextRequest) {
       // Idempotency — same pattern as Tabby (SET NX)
       const idempotencyKey = `tamara_processed:${tamaraOrderId}`;
       try {
-        const wasSet = await redis.set(idempotencyKey, "1", {
-          ex: 60 * 60 * 24 * 7, // 7 days
-          nx: true,
-        });
+        const wasSet = await redis.set(idempotencyKey, "1", "EX", 60 * 60 * 24 * 7, "NX");
+          if (wasSet === null) {
+            console.log("[Tamara webhook] Already processed:", tamaraOrderId);
+            return NextResponse.json({ received: true });
+          }
         if (wasSet === null) {
           console.log("[Tamara webhook] Already processed:", tamaraOrderId);
           return NextResponse.json({ received: true });
@@ -350,7 +342,7 @@ export async function POST(request: NextRequest) {
     case "order_canceled":   // Tamara uses single-l spelling
     case "order_refunded": {
       console.warn(`[Tamara webhook] Order ${tamaraOrderId} — ${event_type}`);
-      // Add any notification logic here (email, DB status update, etc.)
+
       break;
     }
 

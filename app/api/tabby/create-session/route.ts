@@ -5,7 +5,7 @@ import {
   getMerchantCode,
   isTabbyAvailable,
 } from "@/app/lib/tabby.config";
-import { Redis } from "@upstash/redis";
+import redis from "@/app/lib/redis";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -13,10 +13,6 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-});
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
@@ -205,22 +201,22 @@ export async function POST(request: NextRequest) {
     }
 
     // Store AED values in Redis — webhook uses these to create Shopify order
-  await redis.set(
+ await redis.set(
   `tabby_checkout:${referenceId}`,
   JSON.stringify({
-    items,                                        // AED — for Shopify webhook
-    itemsDisplay:    itemsDisplay ?? items,       // display currency — for success page
+    items,
+    itemsDisplay:    itemsDisplay ?? items,
     customer,
-    currency:        region.currency,             // display currency e.g. "SAR"
-    shipping,                                     // AED — for Shopify webhook
-    shippingDisplay: shippingDisplay ?? shipping, // display currency — for success page
+    currency:        region.currency,
+    shipping,
+    shippingDisplay: shippingDisplay ?? shipping,
     shippingHandle,
-    discountAmount,                               // AED — for Shopify webhook
-    discountDisplay: discountDisplay ?? discountAmount, // display currency
+    discountAmount,
+    discountDisplay: discountDisplay ?? discountAmount,
     discountCode,
     token:           token || "",
   }),
-  { ex: 60 * 60 * 24 },
+  "EX", 60 * 60 * 24,
 );
 
     return NextResponse.json(
