@@ -79,7 +79,7 @@ function SuccessContent() {
   }
 
   return (
-    <div className="grid grid-cols-1 place-items-center mt-10">
+    <div className="grid grid-cols-1 pb-10 place-items-center mt-10">
       <div className="flex flex-col items-center justify-center">
         <video className="size-20 mb-5" autoPlay muted playsInline>
           <source src="/order-success.webm" type="video/webm" />

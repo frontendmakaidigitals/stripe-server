@@ -205,20 +205,23 @@ export async function POST(request: NextRequest) {
     }
 
     // Store AED values in Redis — webhook uses these to create Shopify order
-    await redis.set(
-      `tabby_checkout:${referenceId}`,
-      JSON.stringify({
-        items,           // ← AED prices
-        customer,
-        currency:        "AED",   // ← always AED for Shopify
-        shipping,        // ← AED
-        shippingHandle,
-        discountAmount,  // ← AED
-        discountCode,
-        token:           token || "",
-      }),
-      { ex: 60 * 60 * 24 },
-    );
+  await redis.set(
+  `tabby_checkout:${referenceId}`,
+  JSON.stringify({
+    items,                                        // AED — for Shopify webhook
+    itemsDisplay:    itemsDisplay ?? items,       // display currency — for success page
+    customer,
+    currency:        region.currency,             // display currency e.g. "SAR"
+    shipping,                                     // AED — for Shopify webhook
+    shippingDisplay: shippingDisplay ?? shipping, // display currency — for success page
+    shippingHandle,
+    discountAmount,                               // AED — for Shopify webhook
+    discountDisplay: discountDisplay ?? discountAmount, // display currency
+    discountCode,
+    token:           token || "",
+  }),
+  { ex: 60 * 60 * 24 },
+);
 
     return NextResponse.json(
       { url: product.web_url, referenceId },
