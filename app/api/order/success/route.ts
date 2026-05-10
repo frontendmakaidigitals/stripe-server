@@ -10,57 +10,63 @@ export async function GET(request: NextRequest) {
 
   try {
     // ── Stripe ──────────────────────────────────────────────────────────────
-    if (provider === "stripe" && sessionId) {
-      const stripe = new (await import("stripe")).default(
-        process.env.STRIPE_SECRET_KEY!,
-        { apiVersion: "2026-04-22.dahlia" }
-      );
+   if (provider === "stripe" && sessionId) {
+  // Check if webhook already stored the order data
+  const stored = await redis.get(`stripe_order:${sessionId}`);
+  if (stored) {
+    const data = JSON.parse(stored);
+    return NextResponse.json({ ...data, provider: "stripe" });
+  }
 
-      const session = await stripe.checkout.sessions.retrieve(sessionId, {
-        expand: ["line_items.data.price.product"],
-      });
+  // Fallback — webhook hasn't fired yet, read from Stripe directly
+  const stripe = new (await import("stripe")).default(
+    process.env.STRIPE_SECRET_KEY!,
+    { apiVersion: "2026-04-22.dahlia" }
+  );
 
-      const aedToBase = parseFloat(session.metadata?.aedToBase || "1") || 1;
+  const session = await stripe.checkout.sessions.retrieve(sessionId, {
+    expand: ["line_items.data.price.product"],
+  });
 
-      // Build CartItem[] from Stripe line items (display currency prices)
-      const items = (session.line_items?.data ?? [])
-        .filter((li) => {
-          const sku = (li.price?.product as any)?.metadata?.sku ?? "";
-          return sku !== "__shipping__";
-        })
-        .map((li) => ({
-          product_title: li.description ?? "Product",
-          sku:           (li.price?.product as any)?.metadata?.sku        || "",
-          variant_id:    (li.price?.product as any)?.metadata?.variant_id || "",
-          price:         (li.price?.unit_amount ?? 0) / 100, // display currency
-          quantity:      li.quantity ?? 1,
-          image:         "",
-        }));
+  const aedToBase = parseFloat(session.metadata?.aedToBase || "1") || 1;
 
-      // Unpack customer from pipe-delimited metadata
-      const custParts = (session.metadata?.cust || "").split("|");
-      const customer = {
-        name:    custParts[0] || "",
-        email:   session.customer_email || custParts[1] || "",
-        phone:   custParts[2] || "",
-        address: custParts[3] || "",
-        city:    custParts[5] || "",
-        country: custParts[8] || "",
-      };
+  const items = (session.line_items?.data ?? [])
+    .filter((li) => {
+      const sku = (li.price?.product as any)?.metadata?.sku ?? "";
+      return sku !== "__shipping__";
+    })
+    .map((li) => ({
+      product_title: li.description ?? "Product",
+      sku:           (li.price?.product as any)?.metadata?.sku        || "",
+      variant_id:    (li.price?.product as any)?.metadata?.variant_id || "",
+      price:         (li.price?.unit_amount ?? 0) / 100,
+      quantity:      li.quantity ?? 1,
+      image:         (li.price?.product as any)?.images?.[0] || "",
+    }));
 
-      return NextResponse.json({
-        orderId:        session.metadata?.order_id || sessionId,
-        email:          session.customer_email,
-        provider:       "stripe",
-        currency:       session.currency?.toUpperCase() ?? "AED",
-        items,
-        shipping:       parseFloat(session.metadata?.shippingAED   || "0") / aedToBase,
-        discountAmount: parseFloat(session.metadata?.discountAmountAED || "0") / aedToBase,
-        discountCode:   session.metadata?.discountCode   || "",
-        shippingHandle: session.metadata?.shippingHandle || "",
-        customer,
-      });
-    }
+  const custParts = (session.metadata?.cust || "").split("|");
+  const customer = {
+    name:    custParts[0] || "",
+    email:   session.customer_email || custParts[1] || "",
+    phone:   custParts[2] || "",
+    address: custParts[3] || "",
+    city:    custParts[5] || "",
+    country: custParts[8] || "",
+  };
+
+  return NextResponse.json({
+    orderId:        sessionId, // fallback until webhook fires
+    email:          session.customer_email,
+    provider:       "stripe",
+    currency:       session.currency?.toUpperCase() ?? "AED",
+    items,
+    shipping:       parseFloat(session.metadata?.shippingAED        || "0") / aedToBase,
+    discountAmount: parseFloat(session.metadata?.discountAmountAED  || "0") / aedToBase,
+    discountCode:   session.metadata?.discountCode   || "",
+    shippingHandle: session.metadata?.shippingHandle || "",
+    customer,
+  });
+}
 
       if ((provider === "tabby" || provider === "tamara") && referenceId) {
         const displayKey = `${provider}_display:${referenceId}`;

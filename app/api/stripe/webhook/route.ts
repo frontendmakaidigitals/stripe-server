@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import type { CartItem, CustomerInfo } from "@/types/checkout.types";
+import redis from "@/app/lib/redis";
 
 export const runtime = "nodejs";
 
@@ -46,7 +47,7 @@ async function createShopifyOrder(
   const lineItems: object[] = items.map((item) => ({
     title:             item.product_title,
     sku:               item.sku || item.variant_id || "",
-    price:             item.price.toFixed(2),  // AED, VAT-inclusive
+    price:             item.price.toFixed(2),
     quantity:          item.quantity,
     requires_shipping: true,
     taxable:           true,
@@ -152,11 +153,10 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
   const meta           = session.metadata ?? {};
   const aedToBase      = parseFloat(meta.aedToBase   || "1") || 1;
   const shipping       = parseFloat(meta.shippingAED || "0");
-  const shippingHandle = meta.shippingHandle    || "Shipping";
-  const discountCode   = meta.discountCode      || undefined;
+  const shippingHandle = meta.shippingHandle || "Shipping";
+  const discountCode   = meta.discountCode   || undefined;
   const discountAmount = parseFloat(meta.discountAmountAED || "0");
 
-  // ── Expand the session to get line items ────────────────────────────────
   console.log(`[Webhook] Expanding session ${session.id}...`);
   let expanded: Stripe.Checkout.Session;
   try {
@@ -168,8 +168,6 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
     return;
   }
 
-  // ── Unpack customer from pipe-delimited metadata field ───────────────
-  // Format: name|email|phone|address1|address2|city|province|zip|country
   const [
     custName     = "",
     custEmail    = "",
@@ -185,8 +183,8 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
   const countryCode = custCountry || "AE";
   const customer: CustomerInfo = {
     id:          "",
-    name:        custName    || "Guest",
-    email:       custEmail   || session.customer_email || "",
+    name:        custName  || "Guest",
+    email:       custEmail || session.customer_email || "",
     phone:       custPhone,
     address:     custAddress,
     address2:    custAddress2,
@@ -198,11 +196,11 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
     addresses:   [],
   };
 
-  // ── Build cart items from Stripe line items, converting to AED ────────
   const shippingLabel = (shippingHandle || "shipping").toLowerCase();
+
+  // AED items for Shopify order creation
   const items: CartItem[] = (expanded.line_items?.data ?? [])
     .filter((li) => {
-      // Skip the shipping line item we added as a product
       const name = (li.description ?? "").toLowerCase();
       const sku  = (li.price?.product as Stripe.Product)?.metadata?.sku ?? "";
       return name !== shippingLabel && sku !== "__shipping__";
@@ -211,25 +209,38 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
       const product = li.price?.product as Stripe.Product | undefined;
       return {
         product_title: li.description ?? "Product",
-        sku:           product?.metadata?.sku           || "",
-        variant_id:    product?.metadata?.variant_id    || "",
-        // unit_amount is in display-currency cents → convert to AED
-        price:         (li.price?.unit_amount ?? 0) / 100 / aedToBase,
+        sku:           product?.metadata?.sku        || "",
+        variant_id:    product?.metadata?.variant_id || "",
+        price:         (li.price?.unit_amount ?? 0) / 100 / aedToBase, // convert to AED
         quantity:      li.quantity ?? 1,
-        image:         "",
+        image:         product?.images?.[0] || "",
+      };
+    });
+
+  // Display currency items for success page
+  const displayItems = (expanded.line_items?.data ?? [])
+    .filter((li) => {
+      const sku = (li.price?.product as Stripe.Product)?.metadata?.sku ?? "";
+      return sku !== "__shipping__";
+    })
+    .map((li) => {
+      const product = li.price?.product as Stripe.Product | undefined;
+      return {
+        product_title: li.description ?? "Product",
+        sku:           product?.metadata?.sku        || "",
+        variant_id:    product?.metadata?.variant_id || "",
+        price:         (li.price?.unit_amount ?? 0) / 100, // display currency
+        quantity:      li.quantity ?? 1,
+        image:         product?.images?.[0] || "",
       };
     });
 
   console.log(
-    `[Webhook] Session expanded. Items: ${items.length}, Customer: ${customer.email}`,
-    `aedToBase: ${aedToBase}`,
+    `[Webhook] Items: ${items.length}, Customer: ${customer.email}, aedToBase: ${aedToBase}`,
   );
 
   if (!items.length) {
-    console.error(
-      "[Webhook] ❌ No items after expanding session:", session.id,
-      "| line_items count:", expanded.line_items?.data?.length,
-    );
+    console.error("[Webhook] ❌ No items after expanding session:", session.id);
     return;
   }
 
@@ -243,11 +254,26 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
       discountAmount,
       discountCode,
     );
-    console.log(
-      `✅ Shopify order ${orderName} created for Stripe session ${session.id}`,
-      shipping > 0       ? `shipping=${shipping.toFixed(2)} AED`       : "",
-      discountAmount > 0 ? `discount=${discountAmount.toFixed(2)} AED` : "",
+
+    console.log(`✅ Shopify order ${orderName} created for Stripe session ${session.id}`);
+
+    // Store for success page
+    await redis.set(
+      `stripe_order:${session.id}`,
+      JSON.stringify({
+        orderId:        orderName,
+        email:          customer.email,
+        currency:       session.currency?.toUpperCase() ?? "AED",
+        items:          displayItems,
+        shipping:       shipping / aedToBase,
+        discountAmount: discountAmount / aedToBase,
+        discountCode:   meta.discountCode   || "",
+        shippingHandle: meta.shippingHandle || "",
+        customer,
+      }),
+      "EX", 60 * 60 * 24,
     );
+
   } catch (err) {
     console.error("Failed to create Shopify order after Stripe payment:", err);
   }
