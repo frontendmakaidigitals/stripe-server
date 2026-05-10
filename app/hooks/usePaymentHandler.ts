@@ -8,13 +8,13 @@ interface UsePaymentHandlersOptions {
   payload: CheckoutPayload;
   shippingCost: number;
   shippingCostAED: number;
+  codFee: number;        // ← add this
   codFeeAED: number;
   selectedRate: ShippingRate | null;
   discountResult: DiscountResult;
   discountAmount: number;
   aedToBase: number;
   setLoading: (v: boolean) => void;
-
   setOrderId: (v: string) => void;
   setStep: (v: Step) => void;
 }
@@ -33,6 +33,7 @@ export function usePaymentHandlers({
   setLoading,
   setOrderId,
   setStep,
+  codFee
 }: UsePaymentHandlersOptions) {
   // ── Shared discount payload ──────────────────────────────────────────────
   const discountPayload = discountResult?.valid
@@ -267,23 +268,22 @@ async function startTabby(customer: CustomerInfo) {
       setOrderId(data.orderId);
       setStep("cod-success" as Step);
           const params = new URLSearchParams({
-  orderId:        data.orderId,
-  provider:       "cod",
-  name:           customer.name,
-  email:          customer.email,
-  phone:          customer.phone,
-  address:        customer.address,
-  city:           customer.city,
-  country:        customer.country,
-  // Add these:
-  items:          JSON.stringify(itemsInAED),
-  currency:       "AED",
-  shipping:       String(shippingCostAED),
-  codFee:         String(codFeeAED),
-  shippingHandle: selectedRate?.handle ?? "",
-  discountAmount: String(discountAmountAED),
-  discountCode:   discountPayload?.discountCode ?? "",
-});
+          orderId:        data.orderId,
+          provider:       "cod",
+          name:           customer.name,
+          email:          customer.email,
+          phone:          customer.phone,
+          address:        customer.address,
+          city:           customer.city,
+          country:        customer.country,
+          items:          JSON.stringify(items),        // ← original items (display currency prices)
+          currency:       currency,                     // ← display currency e.g. "SAR", not hardcoded "AED"
+          shipping:       String(shippingCost),         // ← display currency, not shippingCostAED
+          codFee:         String(codFee),               // ← display currency, not codFeeAED
+          shippingHandle: selectedRate?.handle ?? "",
+          discountAmount: String(discountAmount),       // ← display currency, not discountAmountAED
+          discountCode:   discountPayload?.discountCode ?? "",
+        });
 window.location.href = `/success?${params.toString()}`;
     window.location.href = `/success?${params.toString()}`;
     } catch (err: unknown) {

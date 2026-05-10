@@ -124,6 +124,7 @@ export default function CheckoutClient({
     payload,
     shippingCost: totals.shippingCost,
     shippingCostAED: totals.shippingCostAED,
+    codFee: totals.codFee, // ← from totals
     codFeeAED: totals.codFeeAED,
     selectedRate,
     discountResult,
@@ -258,8 +259,6 @@ export default function CheckoutClient({
           style={{ fontFamily: "'Söhne', 'Helvetica Neue', Arial, sans-serif" }}
           className="min-h-screen bg-white text-[#1a1a1a]"
         >
-        
-
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div className="min-h-[calc(100vh-65px)]">
               <main className="w-full flex container py-10 justify-end">
