@@ -266,6 +266,17 @@ async function startTabby(customer: CustomerInfo) {
       if (!res.ok) throw new Error(data.error || "Order failed");
       setOrderId(data.orderId);
       setStep("cod-success" as Step);
+          const params = new URLSearchParams({
+      orderId:   data.orderId,
+      provider:  "cod",
+      name:      customer.name,
+      email:     customer.email,
+      phone:     customer.phone,
+      address:   customer.address,
+      city:      customer.city,
+      country:   customer.country,
+    });
+    window.location.href = `/success?${params.toString()}`;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Something went wrong";
       toast.error(msg, {duration: 6000,

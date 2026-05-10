@@ -24,7 +24,6 @@ import { useCheckoutTotals } from "../hooks/useCheckoutTotal";
 import { usePaymentHandlers } from "../hooks/usePaymentHandler";
 import { toast } from "sonner";
 
-import Header from "../ui/header";
 import { ContactSection } from "../ui/contact-section";
 import { DeliverySection } from "../ui/delivery-section";
 import { ShippingMethodSection } from "../ui/shipping-method";
@@ -259,9 +258,7 @@ export default function CheckoutClient({
           style={{ fontFamily: "'Söhne', 'Helvetica Neue', Arial, sans-serif" }}
           className="min-h-screen bg-white text-[#1a1a1a]"
         >
-          <div className="flex w-full justify-center py-4 border-b border-gray-200">
-            <Header />
-          </div>
+        
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div className="min-h-[calc(100vh-65px)]">

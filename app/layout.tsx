@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner";
+import Header from "./ui/header";
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 const geistSans = Geist({
@@ -38,6 +39,9 @@ export default function RootLayout({
       )}
     >
       <body className="min-h-full flex flex-col">
+        <div className="flex w-full justify-center py-4 border-b border-gray-200">
+          <Header />
+        </div>
         {children}
         <Toaster />
       </body>
