@@ -28,6 +28,7 @@ function importKey(secret: string): Promise<CryptoKey> {
 export async function signCheckoutToken(
   payload: CheckoutPayload,
   expiresInSeconds = 900, // 15 minutes
+  
 ): Promise<string> {
   const secret = process.env.CHECKOUT_TOKEN_SECRET;
   if (!secret) throw new Error("CHECKOUT_TOKEN_SECRET env var is not set");

@@ -79,12 +79,13 @@ export interface checkoutItem {
 export interface CheckoutPayload {
   items: CartItem[];
   currency: string;
-  total: number;       // in cents
+  total: number;
   customer: CustomerInfo;
   shop: string;     
-  token?:string ;
-  shipping?: number;           // shipping cost in the store currency
-  discountAmount?: number;     // discount value (fixed amount, already calculated)
+  token?: string;
+  shipping?: number;
+  discountAmount?: number;
   discountCode?: string; 
   shippingHandle?: string;
+  conversion_rate?: number;    // ← add this
 }

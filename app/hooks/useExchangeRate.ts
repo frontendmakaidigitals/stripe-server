@@ -1,10 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
 
-/**
- * Fetches the AED → base-currency exchange rate.
- * Returns 1 immediately for AED (no conversion needed).
- */
 export function useExchangeRate(currency: string) {
   const [aedToBase, setAedToBase] = useState<number>(1);
 

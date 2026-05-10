@@ -194,7 +194,6 @@ export async function POST(request: NextRequest) {
       customer,
       shop,
       timestamp,
-      conversion_rate: conversionRate = 1,
     } = body;
 
     // ── Field validation ──────────────────────────────────────────────────
@@ -221,6 +220,27 @@ export async function POST(request: NextRequest) {
         { status: 403, headers },
       );
     }
+// ── Fetch live conversion rate server-side ────────────────────────────────
+    async function getConversionRate(currency: string): Promise<number> {
+      if (currency === "AED") return 1;
+
+      try {
+        const res = await fetch("https://api.exchangerate-api.com/v4/latest/AED", {
+          signal: AbortSignal.timeout(3000),
+          next: { revalidate: 3600 }, // cache for 1 hour if using Next.js fetch
+        });
+        if (!res.ok) return 1;
+
+        const data = await res.json();
+        const rate = data.rates[currency];
+        if (!rate) return 1;
+
+        return parseFloat((rate * 1.03).toFixed(6)); // apply your 3% markup here
+      } catch {
+        return 1; // fail open — fall back to AED
+      }
+    }
+    const conversionRate = await getConversionRate(currency);
 
     // ── Conversion rate validation ────────────────────────────────────────
     const rateValid = await validateConversionRate(conversionRate, currency);
@@ -237,7 +257,6 @@ export async function POST(request: NextRequest) {
     const isUAE    = country === "AE";
     const markup   = isUAE ? 1 : 1.03;
 
-    console.log(`[checkout-token] IP=${ip} country=${country} markup=${markup} currency=${currency}`);
 
     // ── Fetch real prices from Shopify ────────────────────────────────────
     const variantIds = items.map((i: any) => String(i.variant_id));
@@ -245,28 +264,28 @@ export async function POST(request: NextRequest) {
 
     // ── Build secure items ────────────────────────────────────────────────
     const secureItems = items.map((item: any) => {
-      const variant = variants.find(
-        (v) => v.variant_id === String(item.variant_id),
-      );
-      if (!variant) throw new Error(`Invalid variant: ${item.variant_id}`);
+  const variant = variants.find(
+    (v) => v.variant_id === String(item.variant_id),
+  );
+  if (!variant) throw new Error(`Invalid variant: ${item.variant_id}`);
 
-      const priceAEDWithMarkup = parseFloat(
-        (variant.priceAED * markup).toFixed(2),
-      );
-      const priceInCurrency = parseFloat(
-        (priceAEDWithMarkup * conversionRate).toFixed(2),
-      );
+  const priceAEDWithMarkup = parseFloat(
+    (variant.priceAED * markup).toFixed(2),
+  );
+  const priceInCurrency = parseFloat(
+    (priceAEDWithMarkup * conversionRate).toFixed(2), // now uses server rate
+  );
 
-      return {
-        variant_id:    variant.variant_id,
-        sku:           variant.sku,
-        product_title: variant.product_title,
-        image:         variant.image,
-        quantity:      item.quantity,
-        price:         priceInCurrency,    // display currency for Stripe/Tabby/Tamara
-        price_aed:     priceAEDWithMarkup, // AED for Shopify order creation
-      };
-    });
+  return {
+    variant_id:    variant.variant_id,
+    sku:           variant.sku,
+    product_title: variant.product_title,
+    image:         variant.image,
+    quantity:      item.quantity,
+    price:         priceInCurrency,    // display currency — server-calculated
+    price_aed:     priceAEDWithMarkup, // AED for Shopify
+  };
+});
 
     const secureTotal = parseFloat(
       secureItems
@@ -294,6 +313,7 @@ export async function POST(request: NextRequest) {
       total:    secureTotal,
       customer: safeCustomer,
       shop,
+       conversion_rate: conversionRate,
     });
 
     return NextResponse.json({ token }, { headers });
