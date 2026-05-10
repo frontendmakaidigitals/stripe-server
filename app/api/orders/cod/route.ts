@@ -26,7 +26,7 @@ async function createShopifyOrder(
   shippingHandle: string = "Shipping",
 ) {
   const domain = process.env.NEXT_PUBLIC_SHOPIFY_DOMAIN!;
-  const token = process.env.SHOPIFY_ACCESS_TOKEN!;
+  const token  = process.env.SHOPIFY_ACCESS_TOKEN!;
 
   const [firstName, ...rest] = customer.name.trim().split(" ");
   const lastName = rest.join(" ") || "-";
@@ -50,7 +50,7 @@ async function createShopifyOrder(
   const lineItems: object[] = items.map((item) => ({
     title:             item.product_title,
     sku:               item.sku || item.variant_id || "",
-    price:             item.price.toFixed(2), // e.g. 566.50 (VAT-inclusive)
+    price:             item.price.toFixed(2),
     quantity:          item.quantity,
     requires_shipping: true,
     taxable:           true,
@@ -59,13 +59,14 @@ async function createShopifyOrder(
   if (codFee > 0) {
     lineItems.push({
       title:             "COD Fee",
-      price:             codFee.toFixed(2), // e.g. 10.00 (VAT-inclusive)
+      price:             codFee.toFixed(2),
       quantity:          1,
       requires_shipping: false,
-      taxable:           true,  
+      taxable:           true,
     });
   }
 
+  // ── Create draft order ────────────────────────────────────────────────────
   const draftRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders.json`,
     {
@@ -81,22 +82,21 @@ async function createShopifyOrder(
           shipping_address: address,
           billing_address:  address,
           tax_exempt:       !isUAE,
-          taxes_included:   true, 
+          taxes_included:   true,
           note: `COD order — phone: ${customer.phone}${
             codFee > 0 ? ` | COD fee: ${codFee.toFixed(2)} ${currency}` : ""
           }`,
           tags:         "COD, custom-checkout",
           send_receipt: false,
- 
+
           ...(shipping > 0 && {
             shipping_line: {
               title:   shippingHandle,
-              price:   shipping.toFixed(2),  
-              taxable: true,  
+              price:   shipping.toFixed(2),
+              taxable: true,
             },
           }),
 
-          // ── Discount ────────────────────────────────────────────────────
           ...(discountCode && discountAmount > 0
             ? {
                 applied_discount: {
@@ -125,15 +125,13 @@ async function createShopifyOrder(
 
   if (!draftRes.ok) {
     const err = await draftRes.text();
-    console.error("Shopify draft order error:", err);
+    console.error("[COD] Shopify draft order error:", err);
     throw new Error(`Shopify error: ${draftRes.status}`);
   }
 
-  const draftJson = await draftRes.json();
+  const { draft_order: draft } = await draftRes.json();
 
-
-  const draft = draftJson.draft_order;
-
+  // ── Complete draft order ──────────────────────────────────────────────────
   const completeRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders/${draft.id}/complete.json?payment_pending=true`,
     {
@@ -146,16 +144,36 @@ async function createShopifyOrder(
   );
 
   if (!completeRes.ok) {
-    console.warn(
-      "Draft order created but completion failed. Draft ID:",
-      draft.id,
-    );
+    console.warn("[COD] Draft created but completion failed. Draft ID:", draft.id);
     return { orderId: draft.name, numericId: draft.id };
   }
 
   const { draft_order: completed } = await completeRes.json();
 
-  return { orderId: completed.name, numericId: completed.id };
+  if (!completed.order_id) {
+    console.warn("[COD] No order_id after completion. Draft:", completed.name);
+    return { orderId: completed.name, numericId: completed.id };
+  }
+
+  // ── Fetch real order to get correct order name (#1001 format) ────────────
+  const orderRes = await fetch(
+    `https://${domain}/admin/api/2024-01/orders/${completed.order_id}.json`,
+    {
+      headers: {
+        "X-Shopify-Access-Token": token,
+        "Content-Type":           "application/json",
+      },
+    },
+  );
+
+  if (!orderRes.ok) {
+    console.warn("[COD] Could not fetch real order, falling back to order_id");
+    return { orderId: `#${completed.order_id}`, numericId: completed.order_id };
+  }
+
+  const { order } = await orderRes.json();
+  console.log(`[COD] Order created: ${order.name} (${order.id})`);
+  return { orderId: order.name, numericId: order.id };
 }
 
 export async function POST(request: NextRequest) {
@@ -175,6 +193,7 @@ export async function POST(request: NextRequest) {
     if (!items?.length) {
       return NextResponse.json({ error: "No items in cart" }, { status: 400 });
     }
+
     if (
       !customer?.name    ||
       !customer?.email   ||
@@ -204,9 +223,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, orderId: result.orderId });
   } catch (err: unknown) {
-    const message =
-      err instanceof Error ? err.message : "Order creation failed";
-    console.error("COD order error:", message);
+    const message = err instanceof Error ? err.message : "Order creation failed";
+    console.error("[COD] Order error:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

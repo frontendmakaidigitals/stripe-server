@@ -255,7 +255,6 @@ export default function CheckoutClient({
   return (
     <CheckoutContext.Provider value={contextValue}>
       <FormProvider {...methods}>
-         ̰ ̰
         <div
           style={{ fontFamily: "'Söhne', 'Helvetica Neue', Arial, sans-serif" }}
           className="min-h-screen bg-white text-[#1a1a1a]"
