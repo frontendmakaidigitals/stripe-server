@@ -6,7 +6,6 @@ import { markTokenUsed } from "@/app/lib/used-tokens";
 
 export const runtime = "nodejs";
 
-
 // ── Signature verification ─────────────────────────────────────────────────────
 function verifyTabbySignature(request: NextRequest): boolean {
   const incoming =
@@ -42,13 +41,14 @@ async function resolveCheckoutPayload(
   }
 
   if (referenceId) {
-    const raw = await redis.get(`tabby_checkout:${referenceId}`);
+    // ✅ Fix 1: read from tabby_display: not tabby_checkout:
+    const raw = await redis.get(`tabby_display:${referenceId}`);
     if (raw) {
       console.log("[Tabby webhook] Resolved payload via Redis:", referenceId);
       const payload = typeof raw === "string" ? JSON.parse(raw) : raw;
       return { payload, tokenKey: referenceId };
     }
-    console.error("[Tabby webhook] Redis key not found: tabby_checkout:" + referenceId);
+    console.error("[Tabby webhook] Redis key not found: tabby_display:" + referenceId);
   }
 
   throw new Error(
@@ -62,7 +62,9 @@ async function captureTabbyPayment(
   amount: string,
   currency: string,
 ): Promise<void> {
-  const apiBase = "https://api.tabby.ai";
+  // ✅ Fix 2: SAR uses api.tabby.sa, others use api.tabby.ai
+  const apiBase =
+    currency === "SAR" ? "https://api.tabby.sa" : "https://api.tabby.ai";
 
   const secretKey =
     currency === "SAR"
@@ -122,7 +124,6 @@ async function createShopifyOrder(
     phone:      customer.phone    || "",
   };
 
-  // Don't use variant_id — Shopify overrides price when variant_id present
   const lineItems: object[] = items.map((item) => ({
     title:             item.product_title,
     sku:               item.sku || item.variant_id || "",
@@ -141,12 +142,12 @@ async function createShopifyOrder(
     note:             `Paid via Tabby. Payment ID: ${tabbyPaymentId}`,
     tags:             "Tabby, BNPL, custom-checkout",
     send_receipt:     true,
-    taxes_included:   true,  
+    taxes_included:   true,
     ...(shipping > 0 && {
       shipping_line: {
-        title: shippingHandle,
-        price: shipping.toFixed(2),
-        code:  "TABBY_SHIPPING",
+        title:   shippingHandle,
+        price:   shipping.toFixed(2),
+        code:    "TABBY_SHIPPING",
         taxable: true,
       },
     }),
@@ -154,10 +155,10 @@ async function createShopifyOrder(
       applied_discount: {
         value_type:  "fixed_amount",
         value:       discountAmount.toFixed(2),
-        amount:      discountAmount.toFixed(2),  // ← add this
+        amount:      discountAmount.toFixed(2),
         title:       discountCode,
         description: `Discount code: ${discountCode}`,
-        taxable: true,
+        taxable:     true,
       },
     }),
   };
@@ -201,7 +202,30 @@ async function createShopifyOrder(
   }
 
   const { draft_order: completed } = await completeRes.json();
-  return completed.name;
+
+  if (!completed.order_id) {
+    console.warn("[Tabby webhook] No order_id after completion. Draft:", completed.name);
+    return completed.name;
+  }
+
+  const orderRes = await fetch(
+    `https://${domain}/admin/api/2024-01/orders/${completed.order_id}.json`,
+    {
+      headers: {
+        "X-Shopify-Access-Token": token,
+        "Content-Type":           "application/json",
+      },
+    },
+  );
+
+  if (!orderRes.ok) {
+    console.warn("[Tabby webhook] Could not fetch real order, falling back");
+    return `#${completed.order_id}`;
+  }
+
+  const { order } = await orderRes.json();
+  console.log(`[Tabby webhook] Real order: ${order.name} (${order.id})`);
+  return order.name;
 }
 
 // ── Webhook handler ────────────────────────────────────────────────────────────
@@ -226,7 +250,8 @@ export async function POST(request: NextRequest) {
   const currency: string = body.currency || "AED";
   const status = (body.status || "").toLowerCase();
   const hasCaptured = Array.isArray(body.captures) && body.captures.length > 0;
-  const isClosed = status === "closed" || body.closed_at !== null;
+  // ✅ Fix 3: use loose != to catch both null and undefined
+  const isClosed = status === "closed" || (body.closed_at != null);
 
   // ── Step 1: If authorized and not yet captured → capture it ───────────────
   if (status === "authorized" && !hasCaptured) {
@@ -249,7 +274,7 @@ export async function POST(request: NextRequest) {
   // ── Atomic idempotency check via SET NX ───────────────────────────────────
   const idempotencyKey = `tabby_processed:${tabbyPaymentId}`;
   try {
-   const wasSet = await redis.set(idempotencyKey, "1", "EX", 60 * 60 * 24 * 7, "NX");
+    const wasSet = await redis.set(idempotencyKey, "1", "EX", 60 * 60 * 24 * 7, "NX");
 
     if (wasSet === null) {
       console.log("[Tabby webhook] Already processed:", tabbyPaymentId);
@@ -277,19 +302,24 @@ export async function POST(request: NextRequest) {
       referenceId,
     );
 
-
-    await createShopifyOrder(
+    const orderName = await createShopifyOrder(
       checkoutPayload.items,
       checkoutPayload.customer,
       tabbyPaymentId,
       checkoutPayload.shipping ?? 0,
-      checkoutPayload.shippingHandle ?? "Shipping", // ← added
+      checkoutPayload.shippingHandle ?? "Shipping",
       checkoutPayload.discountAmount ?? 0,
       checkoutPayload.discountCode,
     );
 
+    // ✅ Fix 4: store order name so success page can display it
+    if (referenceId && orderName) {
+      await redis.set(`tabby_order:${referenceId}`, orderName, "EX", 60 * 60 * 24 * 7);
+      console.log("[Tabby webhook] Stored order name:", orderName, "for:", referenceId);
+    }
+
     if (jwtToken) await markTokenUsed(jwtToken);
-    if (referenceId) await redis.del(`tabby_checkout:${referenceId}`);
+    if (referenceId) await redis.del(`tabby_display:${referenceId}`);
 
   } catch (err) {
     await redis.del(idempotencyKey);
