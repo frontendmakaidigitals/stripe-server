@@ -51,16 +51,32 @@ function SuccessContent() {
   useEffect(() => {
     if (codData) return;
 
-    const params = new URLSearchParams();
-    if (provider) params.set("provider", provider);
-    if (sessionId) params.set("session_id", sessionId);
-    if (referenceId) params.set("referenceId", referenceId);
+    let attempts = 0;
 
-    fetch(`/api/order/success?${params.toString()}`)
-      .then((r) => r.json())
-      .then((data) => setOrderData(data))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    async function poll() {
+      const params = new URLSearchParams();
+      if (provider) params.set("provider", provider);
+      if (sessionId) params.set("session_id", sessionId);
+      if (referenceId) params.set("referenceId", referenceId);
+
+      try {
+        const r = await fetch(`/api/order/success?${params.toString()}`);
+        const data = await r.json();
+        setOrderData(data);
+        setLoading(false);
+
+        // Keep polling until orderId appears (webhook may not have fired yet)
+        if (!data.orderId && attempts < 10) {
+          attempts++;
+          setTimeout(poll, 3000);
+        }
+      } catch (err) {
+        console.error(err);
+        setLoading(false);
+      }
+    }
+
+    poll();
   }, []);
 
   function copyOrderId() {
