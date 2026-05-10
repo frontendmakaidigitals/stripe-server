@@ -261,6 +261,24 @@ export async function POST(request: NextRequest) {
     // ── Fetch real prices from Shopify ────────────────────────────────────
     const variantIds = items.map((i: any) => String(i.variant_id));
     const variants   = await fetchShopifyVariants(variantIds);
+    console.log("[checkout-token] currency:", currency);
+console.log("[checkout-token] conversionRate:", conversionRate);
+console.log("[checkout-token] markup:", markup);
+console.log("[checkout-token] variants from Shopify:", JSON.stringify(variants, null, 2));
+console.log("[checkout-token] secureItems will be:", items.map((item: any) => {
+  const variant = variants.find((v) => v.variant_id === String(item.variant_id));
+  if (!variant) return { error: `variant not found: ${item.variant_id}` };
+  const priceAEDWithMarkup = parseFloat((variant.priceAED * markup).toFixed(2));
+  const priceInCurrency = parseFloat((priceAEDWithMarkup * conversionRate).toFixed(2));
+  return {
+    variant_id: variant.variant_id,
+    priceAED: variant.priceAED,
+    markup,
+    priceAEDWithMarkup,
+    conversionRate,
+    priceInCurrency,
+  };
+}));
 
     // ── Build secure items ────────────────────────────────────────────────
     const secureItems = items.map((item: any) => {
