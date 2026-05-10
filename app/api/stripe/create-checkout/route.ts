@@ -136,7 +136,8 @@ export async function POST(request: NextRequest) {
       customer_email:       customer?.email || undefined,
       line_items:           lineItems,
       ...(discounts ? { discounts } : { allow_promotion_codes: false }),
-      success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${baseUrl}/success?provider=stripe&session_id={CHECKOUT_SESSION_ID}`,
+
       cancel_url:  cancelUrl ?? `${baseUrl}/checkout`,
       metadata: {
         cust:              custPacked,
