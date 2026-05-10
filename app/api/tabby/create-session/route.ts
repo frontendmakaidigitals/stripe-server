@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
       },
       merchant_code: merchantCode,
       merchant_urls: {
-        success: `${baseUrl}/success?provider=tabby`,
+       success: `${baseUrl}/success?provider=tabby&referenceId=${referenceId}`,
         cancel:  cancelUrl ?? `${baseUrl}/checkout${token ? `?token=${token}` : ""}`,
         failure: `${baseUrl}/checkout?error=tabby_failed${token ? `&token=${token}` : ""}`,
       },
