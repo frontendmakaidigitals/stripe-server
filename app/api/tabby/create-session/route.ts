@@ -204,6 +204,8 @@ console.log("[Tabby] Merchant URLs:", JSON.stringify({
   cancel:  cancelUrl ?? `${baseUrl}/checkout${token ? `?token=${token}` : ""}`,
   failure: `${baseUrl}/checkout?error=tabby_failed${token ? `&token=${token}` : ""}`,
 }));
+console.log("[Tabby] Full payload being sent:", JSON.stringify(payload, null, 2));
+
     // Store AED values in Redis — webhook uses these to create Shopify order
  await redis.set(
   `tabby_checkout:${referenceId}`,
