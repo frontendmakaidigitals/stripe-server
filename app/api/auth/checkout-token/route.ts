@@ -221,36 +221,23 @@ export async function POST(request: NextRequest) {
       );
     }
 // ── Fetch live conversion rate server-side ────────────────────────────────
-    async function getConversionRate(currency: string): Promise<number> {
-      if (currency === "AED") return 1;
-
-      try {
-        const res = await fetch("https://api.exchangerate-api.com/v4/latest/AED", {
-          signal: AbortSignal.timeout(3000),
-          next: { revalidate: 3600 }, // cache for 1 hour if using Next.js fetch
-        });
-        if (!res.ok) return 1;
-
-        const data = await res.json();
-        const rate = data.rates[currency];
-        if (!rate) return 1;
-
-        return parseFloat((rate * 1.03).toFixed(6)); // apply your 3% markup here
-      } catch {
-        return 1; // fail open — fall back to AED
-      }
-    }
+  async function getConversionRate(currency: string): Promise<number> {
+  if (currency === "AED") return 1;
+  try {
+    const res = await fetch("https://api.exchangerate-api.com/v4/latest/AED", {
+      signal: AbortSignal.timeout(3000),
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return 1;
+    const data = await res.json();
+    const rate = data.rates[currency];
+    if (!rate) return 1;
+    return parseFloat(rate.toFixed(6)); // ← removed * 1.03
+  } catch {
+    return 1;
+  }
+}
     const conversionRate = await getConversionRate(currency);
-
-    // ── Conversion rate validation ────────────────────────────────────────
-    const rateValid = await validateConversionRate(conversionRate, currency);
-    if (!rateValid) {
-      console.warn(`[checkout-token] Suspicious rate ${conversionRate} for ${currency} from IP ${ip}`);
-      return NextResponse.json(
-        { error: "Invalid conversion rate" },
-        { status: 400, headers },
-      );
-    }
 
     // ── Country & markup ──────────────────────────────────────────────────
     const country  = await getCountryFromIp(ip);
