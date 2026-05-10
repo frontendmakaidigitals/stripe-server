@@ -207,8 +207,8 @@ console.log("[Tabby] Merchant URLs:", JSON.stringify({
 console.log("[Tabby] Full payload being sent:", JSON.stringify(payload, null, 2));
 
     // Store AED values in Redis — webhook uses these to create Shopify order
- await redis.set(
-  `tabby_checkout:${referenceId}`,
+await redis.set(
+  `tabby_display:${referenceId}`,  // ← was tabby_checkout:
   JSON.stringify({
     items,
     itemsDisplay:    itemsDisplay ?? items,
