@@ -98,7 +98,7 @@ function SuccessContent() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  if (loading) {
+  if (loading || !orderData?.orderId) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Spinner />
