@@ -282,21 +282,23 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
     console.log(`✅ Shopify order ${orderName} created for Stripe session ${session.id}`);
 
     // Store for success page
-    await redis.set(
-      `stripe_order:${session.id}`,
-      JSON.stringify({
-        orderId:        orderName,
-        email:          customer.email,
-        currency:       session.currency?.toUpperCase() ?? "AED",
-        items:          displayItems,
-        shipping:       shipping / aedToBase,
-        discountAmount: discountAmount / aedToBase,
-        discountCode:   meta.discountCode   || "",
-        shippingHandle: meta.shippingHandle || "",
-        customer,
-      }),
-      "EX", 60 * 60 * 24,
-    );
+  await redis.set(
+  `stripe_order:${session.id}`,
+  JSON.stringify({
+    orderId:        orderName,
+    email:          customer.email,
+    currency:       session.currency?.toUpperCase() ?? "AED",
+    items:          displayItems,
+    // ✅ display currency values — divide AED by aedToBase to get display currency
+    shipping:       shipping / aedToBase,
+    discountAmount: parseFloat(meta.discountAmountDisplay || "0") ||
+                    discountAmount / aedToBase,
+    discountCode:   meta.discountCode   || "",
+    shippingHandle: meta.shippingHandle || "",
+    customer,
+  }),
+  "EX", 60 * 60 * 24,
+);
 
   } catch (err) {
     console.error("Failed to create Shopify order after Stripe payment:", err);
