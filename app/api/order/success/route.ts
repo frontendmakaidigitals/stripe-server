@@ -69,24 +69,28 @@ export async function GET(request: NextRequest) {
 }
 
       if ((provider === "tabby" || provider === "tamara") && referenceId) {
-        const displayKey = `${provider}_display:${referenceId}`;
-        const raw = await redis.get(displayKey);
-        if (!raw) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  const displayKey = `${provider}_display:${referenceId}`;
+  const raw = await redis.get(displayKey);
+  if (!raw) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
-        const data = JSON.parse(raw);
+  const data = JSON.parse(raw);
 
-        return NextResponse.json({
-          ...data,
-          provider,
-          items:          data.itemsDisplay    ?? data.items,
-          currency:       data.currency,
-          shipping:       data.shippingDisplay ?? data.shipping,
-          discountAmount: data.discountDisplay ?? data.discountAmount,
-          discountCode:   data.discountCode    ?? "",
-          shippingHandle: data.shippingHandle  ?? "",
-          email:          data.customer?.email ?? "",
-        });
-      }
+  // ← THIS LINE — read the order name stored by the webhook
+  const orderId = await redis.get(`${provider}_order:${referenceId}`);
+
+  return NextResponse.json({
+    ...data,
+    provider,
+    orderId:        orderId ?? null,  // ← was missing
+    items:          data.itemsDisplay ?? data.items,
+    currency:       data.currency,
+    shipping:       data.shippingDisplay ?? data.shipping,
+    discountAmount: data.discountDisplay ?? data.discountAmount,
+    discountCode:   data.discountCode   ?? "",
+    shippingHandle: data.shippingHandle ?? "",
+    email:          data.customer?.email ?? "",
+  });
+}
 
 
     return NextResponse.json({ error: "Missing params" }, { status: 400 });
