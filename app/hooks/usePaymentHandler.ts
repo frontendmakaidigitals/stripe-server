@@ -85,45 +85,50 @@ export function usePaymentHandlers({
 
   return "Payment failed. Please try again or use a different payment method.";
 }
-  async function startStripe(customer: CustomerInfo) {
-    setLoading(true);
-    try {
-      const discountAmountAED =
-        aedToBase > 0 ? discountAmount / aedToBase : discountAmount;
+async function startStripe(customer: CustomerInfo) {
+  setLoading(true);
+  try {
+    // ✅ Use price_aed if available for accurate AED conversion
+    const firstItem = items[0] as any;
+    const correctAedToBase = firstItem?.price_aed && firstItem?.price
+      ? firstItem.price / firstItem.price_aed  // SAR price / AED price = correct rate
+      : aedToBase;
 
-      const res = await fetch("/api/stripe/create-checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          currency,
-          customer,
-          token:             payload.token,
-          shipping:          shippingCost,       // display currency, for Stripe line item
-          shippingHandle:    selectedRate?.handle,
-          cancelUrl,
-          aedToBase,
-          shippingAED:       shippingCostAED,
-          discountAmountAED,
-          ...discountPayload,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Stripe checkout failed");
-      window.location.href = data.url;
-    } catch (err: unknown) {
-  
-  // ← friendly message for unsupported currency
-        const raw = err instanceof Error ? err.message : "";
-      const msg = getFriendlyStripeError(raw, currency);
-      toast.error(msg, {
-        description: "If the problem persists, please contact support.",
-        duration: 6000,
-        className:'bg-red-500! text-red-50!'
-      });
-      setLoading(false);
-        }
-      }
+    const discountAmountAED = correctAedToBase > 0
+      ? discountAmount / correctAedToBase
+      : discountAmount;
+
+    const res = await fetch("/api/stripe/create-checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items,
+        currency,
+        customer,
+        token:             payload.token,
+        shipping:          shippingCost,
+        shippingHandle:    selectedRate?.handle,
+        cancelUrl,
+        aedToBase:         correctAedToBase,  // ✅ pass correct rate for webhook conversion
+        shippingAED:       shippingCostAED,
+        discountAmountAED,
+        ...discountPayload,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Stripe checkout failed");
+    window.location.href = data.url;
+  } catch (err: unknown) {
+    const raw = err instanceof Error ? err.message : "";
+    const msg = getFriendlyStripeError(raw, currency);
+    toast.error(msg, {
+      description: "If the problem persists, please contact support.",
+      duration: 6000,
+      className: "bg-red-500! text-red-50!",
+    });
+    setLoading(false);
+  }
+}
 
   // ── Tabby ────────────────────────────────────────────────────────────────
 async function startTabby(customer: CustomerInfo) {

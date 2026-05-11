@@ -146,7 +146,31 @@ async function createShopifyOrder(
   }
 
   const { draft_order: completed } = await completeRes.json();
-  return completed.name;
+
+  // ✅ Fix: fetch the real Shopify order instead of returning draft name
+  if (!completed.order_id) {
+    console.warn("[Stripe webhook] No order_id after completion. Draft:", completed.name);
+    return completed.name;
+  }
+
+  const orderRes = await fetch(
+    `https://${domain}/admin/api/2024-01/orders/${completed.order_id}.json`,
+    {
+      headers: {
+        "X-Shopify-Access-Token": token,
+        "Content-Type":           "application/json",
+      },
+    },
+  );
+
+  if (!orderRes.ok) {
+    console.warn("[Stripe webhook] Could not fetch real order, falling back");
+    return `#${completed.order_id}`;
+  }
+
+  const { order } = await orderRes.json();
+  console.log(`[Stripe webhook] Real order: ${order.name} (${order.id})`);
+  return order.name;
 }
 
 async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
