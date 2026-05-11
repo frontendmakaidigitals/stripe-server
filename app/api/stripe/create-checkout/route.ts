@@ -146,7 +146,9 @@ export async function POST(request: NextRequest) {
         shippingHandle:    s(shippingHandle || "Shipping", 60),
         discountCode:      s(discountCode   || "",         60),
         discountAmountAED: (discountAmountAED ?? 0).toFixed(2),
-        discountAmountDisplay:  (discountAmount   ?? 0).toFixed(2), // ← add this (SAR amount)
+        discountAmountDisplay:  (discountAmount   ?? 0).toFixed(2), 
+        shippingDisplay:       (shipping          ?? 0).toFixed(2),  // ✅ add this — shipping is already display currency
+
 
       },
     });
