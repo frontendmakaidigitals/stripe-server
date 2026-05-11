@@ -144,11 +144,11 @@ export async function POST(request: NextRequest) {
 
     // Store everything the webhook will need to create the Shopify order.
     // Mirrors the tabby_checkout:{referenceId} pattern exactly.
-  await redis.set(
-  `tamara_checkout:${referenceId}`,
+await redis.set(
+  `tamara_display:${referenceId}`,
   JSON.stringify({
     items,
-    itemsDisplay:    items,
+    itemsDisplay: items,
     customer,
     currency,
     shipping,
@@ -157,8 +157,7 @@ export async function POST(request: NextRequest) {
     discountAmount,
     discountDisplay: discountAmount,
     discountCode,
-    token:           token || "",
-    tamaraOrderId:   data.order_id,
+    email: customer.email,
   }),
   "EX", 60 * 60 * 24,
 );

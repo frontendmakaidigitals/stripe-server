@@ -313,8 +313,11 @@ export async function POST(request: NextRequest) {
           checkoutPayload.shippingHandle ?? "Shipping",
           checkoutPayload.discountAmount ?? 0,
           checkoutPayload.discountCode,
-        );
-
+                );
+        if (referenceId && orderName) {
+          await redis.set(`tamara_order:${referenceId}`, orderName, "EX", 60 * 60 * 24 * 7);
+        }
+        
         console.log(
           `✅ Shopify order ${orderName} created for Tamara order ${tamaraOrderId}`,
         );
@@ -324,6 +327,7 @@ export async function POST(request: NextRequest) {
         console.error("[Tamara webhook] Shopify order creation failed:", err);
         return NextResponse.json({ error: "Order creation failed" }, { status: 500 });
       }
+      
 
       // Cleanup: mark JWT token used + delete Redis checkout payload
       if (checkoutPayload.token) {
