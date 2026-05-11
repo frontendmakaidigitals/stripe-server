@@ -282,17 +282,17 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
     console.log(`✅ Shopify order ${orderName} created for Stripe session ${session.id}`);
 
     // Store for success page
-  await redis.set(
+ await redis.set(
   `stripe_order:${session.id}`,
   JSON.stringify({
     orderId:        orderName,
     email:          customer.email,
     currency:       session.currency?.toUpperCase() ?? "AED",
     items:          displayItems,
-    // ✅ display currency values — divide AED by aedToBase to get display currency
-    shipping:       shipping / aedToBase,
-    discountAmount: parseFloat(meta.discountAmountDisplay || "0") ||
-                discountAmount / aedToBase,
+    shipping:       shipping * aedToBase,        // ← was / now *
+    discountAmount: meta.discountAmountDisplay !== undefined
+      ? parseFloat(meta.discountAmountDisplay)
+      : discountAmount * aedToBase,              // ← was / now *
     discountCode:   meta.discountCode   || "",
     shippingHandle: meta.shippingHandle || "",
     customer,
