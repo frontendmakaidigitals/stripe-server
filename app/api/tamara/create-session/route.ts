@@ -8,13 +8,13 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-
-
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
 
 export async function POST(request: NextRequest) {
+  console.log("[Tamara checkout] HIT");
+
   try {
     const {
       items,
@@ -38,7 +38,10 @@ export async function POST(request: NextRequest) {
       cancelUrl?: string;
     };
 
+    console.log("[Tamara checkout] Parsed body — items:", items?.length, "customer:", customer?.email, "currency:", currency, "shipping:", shipping, "discountAmount:", discountAmount, "discountCode:", discountCode);
+
     if (!items?.length) {
+      console.warn("[Tamara checkout] No items — aborting");
       return NextResponse.json(
         { error: "No items" },
         { status: 400, headers: CORS_HEADERS },
@@ -49,6 +52,8 @@ export async function POST(request: NextRequest) {
     const referenceId  = `order_${Date.now()}`;
     const itemTotal    = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
     const grandTotal   = Math.max(0, itemTotal + shipping - discountAmount);
+
+    console.log(`[Tamara checkout] referenceId=${referenceId} itemTotal=${itemTotal} grandTotal=${grandTotal}`);
 
     const toAmount = (val: number) => ({
       amount:   parseFloat(val.toFixed(2)),
@@ -114,6 +119,8 @@ export async function POST(request: NextRequest) {
       locale:       "en_US",
     };
 
+    console.log("[Tamara checkout] Sending session payload to Tamara API:", process.env.TAMARA_API_URL);
+
     const res = await fetch(`${process.env.TAMARA_API_URL}/checkout`, {
       method:  "POST",
       headers: {
@@ -125,46 +132,45 @@ export async function POST(request: NextRequest) {
 
     if (!res.ok) {
       const error = await res.text();
-      console.error("[Tamara] Session creation failed:", error);
+      console.error("[Tamara checkout] Session creation failed — status:", res.status, "body:", error);
       return NextResponse.json(
         { error: "Tamara session failed", detail: error },
         { status: 502, headers: CORS_HEADERS },
       );
     }
 
-    // data = { order_id, checkout_id, checkout_url, status: "new" }
     const data = await res.json();
+    console.log("[Tamara checkout] Tamara response — order_id:", data.order_id, "checkout_id:", data.checkout_id, "status:", data.status);
 
     if (!data.checkout_url) {
+      console.error("[Tamara checkout] No checkout_url in Tamara response:", data);
       return NextResponse.json(
         { error: "No checkout URL from Tamara" },
         { status: 422, headers: CORS_HEADERS },
       );
     }
 
-    // Store everything the webhook will need to create the Shopify order.
-    // Mirrors the tabby_checkout:{referenceId} pattern exactly.
-await redis.set(
-  `tamara_display:${referenceId}`,
-  JSON.stringify({
-    items,
-    itemsDisplay: items,
-    customer,
-    currency,
-    shipping,
-    shippingDisplay: shipping,
-    shippingHandle,
-    discountAmount,
-    discountDisplay: discountAmount,
-    discountCode,
-    email: customer.email,
-  }),
-  "EX", 60 * 60 * 24,
-);
+    console.log("[Tamara checkout] Storing Redis key tamara_checkout +  tamara_display for referenceId:", referenceId);
 
-    console.log(
-      `[Tamara] Session created. referenceId=${referenceId} tamaraOrderId=${data.order_id}`,
+    await redis.set(
+      `tamara_display:${referenceId}`,
+      JSON.stringify({
+        items,
+        itemsDisplay: items,
+        customer,
+        currency,
+        shipping,
+        shippingDisplay: shipping,
+        shippingHandle,
+        discountAmount,
+        discountDisplay: discountAmount,
+        discountCode,
+        email: customer.email,
+      }),
+      "EX", 60 * 60 * 24,
     );
+
+    console.log(`[Tamara checkout] ✅ Done — referenceId=${referenceId} tamaraOrderId=${data.order_id} checkout_url=${data.checkout_url}`);
 
     return NextResponse.json(
       { url: data.checkout_url, referenceId },
@@ -173,7 +179,7 @@ await redis.set(
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Tamara checkout failed";
-    console.error("[Tamara] Error:", message);
+    console.error("[Tamara checkout] Unhandled error:", message);
     return NextResponse.json(
       { error: message },
       { status: 500, headers: CORS_HEADERS },

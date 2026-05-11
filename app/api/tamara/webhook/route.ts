@@ -10,18 +10,23 @@ function verifyTamaraToken(request: NextRequest): void {
   const authHeader = request.headers.get("authorization") ?? "";
   const token      = authHeader.replace(/^Bearer\s+/i, "").trim();
 
+  console.log("[Tamara webhook] Verifying token — present:", !!token);
+
   if (!token) {
     throw new Error("Missing tamaraToken in Authorization header");
   }
 
-  // Throws if invalid or expired — let the caller handle it
   jwt.verify(token, process.env.TAMARA_NOTIFICATION_TOKEN!, {
     algorithms: ["HS256"],
   });
+
+  console.log("[Tamara webhook] Token verified ✅");
 }
 
 // ── Tamara API helpers ─────────────────────────────────────────────────────────
 async function tamaraPost(path: string, body: object = {}): Promise<any> {
+  console.log(`[Tamara webhook] POST ${process.env.TAMARA_API_URL}${path}`);
+
   const res = await fetch(`${process.env.TAMARA_API_URL}${path}`, {
     method:  "POST",
     headers: {
@@ -33,15 +38,16 @@ async function tamaraPost(path: string, body: object = {}): Promise<any> {
 
   const text = await res.text();
   if (!res.ok) {
+    console.error(`[Tamara webhook] tamaraPost ${path} failed — status:`, res.status, "body:", text);
     throw new Error(`Tamara ${path} failed (${res.status}): ${text}`);
   }
+
+  console.log(`[Tamara webhook] tamaraPost ${path} success — status:`, res.status);
   return JSON.parse(text);
 }
 
 async function authoriseOrder(tamaraOrderId: string): Promise<{ autoCaptured: boolean }> {
-  // Confirms to Tamara that we received the approved notification.
-  // Without this the order stays at "approved" and is excluded from settlement.
-  // Returns auto_captured: true if Tamara already captured — skip manual capture in that case.
+  console.log(`[Tamara webhook] Authorising order ${tamaraOrderId}...`);
   const result = await tamaraPost(`/orders/${tamaraOrderId}/authorise`);
   console.log(`[Tamara webhook] Authorised order ${tamaraOrderId} auto_captured=${result.auto_captured}`);
   return { autoCaptured: result.auto_captured === true };
@@ -54,7 +60,6 @@ async function captureOrder(
   discountAmount: number,
   currency: string,
 ): Promise<void> {
-
   const toAmount = (val: number) => ({
     amount:   parseFloat(val.toFixed(2)),
     currency: currency.toUpperCase(),
@@ -63,7 +68,8 @@ async function captureOrder(
   const itemTotal  = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
   const grandTotal = Math.max(0, itemTotal + shipping - discountAmount);
 
-  // Endpoint is POST /payments/capture — order_id goes in the body, not the URL
+  console.log(`[Tamara webhook] Capturing order ${tamaraOrderId} — itemTotal=${itemTotal} shipping=${shipping} discount=${discountAmount} grandTotal=${grandTotal} currency=${currency}`);
+
   await tamaraPost("/payments/capture", {
     order_id:     tamaraOrderId,
     total_amount: toAmount(grandTotal),
@@ -89,7 +95,7 @@ async function captureOrder(
     },
   });
 
-  console.log(`[Tamara webhook] Captured order ${tamaraOrderId}`);
+  console.log(`[Tamara webhook] ✅ Captured order ${tamaraOrderId}`);
 }
 
 // ── Shopify order creation ─────────────────────────────────────────────────────
@@ -111,6 +117,8 @@ async function createShopifyOrder(
   const isUAE =
     customer.country?.trim().toLowerCase() === "united arab emirates" ||
     customer.country?.trim().toUpperCase() === "AE";
+
+  console.log(`[Tamara webhook] Creating Shopify draft order — customer=${customer.email} items=${items.length} shipping=${shipping} discount=${discountAmount} isUAE=${isUAE}`);
 
   const address = {
     first_name: firstName,
@@ -174,11 +182,15 @@ async function createShopifyOrder(
   );
 
   if (!draftRes.ok) {
-    throw new Error(`Shopify draft order error: ${await draftRes.text()}`);
+    const errText = await draftRes.text();
+    console.error("[Tamara webhook] Shopify draft order failed — status:", draftRes.status, "body:", errText);
+    throw new Error(`Shopify draft order error: ${errText}`);
   }
 
   const { draft_order: draft } = await draftRes.json();
+  console.log(`[Tamara webhook] Shopify draft order created — draft.id=${draft.id} draft.name=${draft.name}`);
 
+  console.log(`[Tamara webhook] Completing Shopify draft order ${draft.id}...`);
   const completeRes = await fetch(
     `https://${domain}/admin/api/2024-01/draft_orders/${draft.id}/complete.json?payment_pending=false`,
     {
@@ -191,11 +203,12 @@ async function createShopifyOrder(
   );
 
   if (!completeRes.ok) {
-    console.warn("[Tamara webhook] Shopify completion failed for draft:", draft.id);
+    console.warn("[Tamara webhook] Shopify completion failed — status:", completeRes.status, "draft.id:", draft.id, "— returning draft name as fallback");
     return draft.name;
   }
 
   const { draft_order: completed } = await completeRes.json();
+  console.log(`[Tamara webhook] ✅ Shopify order completed — name=${completed.name}`);
   return completed.name;
 }
 
@@ -216,6 +229,7 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
+    console.error("[Tamara webhook] Failed to parse request body as JSON");
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
@@ -226,31 +240,32 @@ export async function POST(request: NextRequest) {
   // Step 3: Route by event type
   switch (event_type) {
 
-    // ── approved: MUST call authorise or order is excluded from settlement ──
+    // ── approved ──────────────────────────────────────────────────────────
     case "order_approved": {
+      console.log(`[Tamara webhook] Handling order_approved for ${tamaraOrderId}`);
       try {
         const { autoCaptured } = await authoriseOrder(tamaraOrderId);
         if (autoCaptured) {
-          // Tamara already captured — order_captured webhook will fire next.
-          // Do NOT call capture again or the Shopify order will be created twice.
           console.log(`[Tamara webhook] Auto-captured — skipping manual capture for ${tamaraOrderId}`);
+        } else {
+          console.log(`[Tamara webhook] Not auto-captured — waiting for order_authorised event`);
         }
       } catch (err) {
         console.error("[Tamara webhook] Authorise failed:", err);
-        // Return 500 so Tamara retries — we must not lose this event
         return NextResponse.json({ error: "Authorise failed" }, { status: 500 });
       }
       break;
     }
 
-    // ── authorised: now safe to capture (only if NOT auto_captured) ───────
+    // ── authorised ────────────────────────────────────────────────────────
     case "order_authorised": {
-      // Look up order data from Redis to get items + amounts for capture payload
+      console.log(`[Tamara webhook] Handling order_authorised for ${tamaraOrderId} — looking up Redis key tamara_checkout:${referenceId}`);
       let checkoutPayload: any;
       try {
         const raw = await redis.get(`tamara_checkout:${referenceId}`);
         if (!raw) throw new Error(`Redis key not found: tamara_checkout:${referenceId}`);
         checkoutPayload = typeof raw === "string" ? JSON.parse(raw) : raw;
+        console.log(`[Tamara webhook] Redis payload found — items=${checkoutPayload.items?.length} customer=${checkoutPayload.customer?.email}`);
       } catch (err) {
         console.error("[Tamara webhook] Redis lookup failed on authorised:", err);
         return NextResponse.json({ error: "Order data not found" }, { status: 500 });
@@ -271,39 +286,38 @@ export async function POST(request: NextRequest) {
       break;
     }
 
-    // ── captured: money confirmed — create Shopify order ───────────────────
+    // ── captured ──────────────────────────────────────────────────────────
     case "order_captured": {
-      // Idempotency — same pattern as Tabby (SET NX)
+      console.log(`[Tamara webhook] Handling order_captured for ${tamaraOrderId}`);
+
       const idempotencyKey = `tamara_processed:${tamaraOrderId}`;
+      console.log(`[Tamara webhook] Checking idempotency key: ${idempotencyKey}`);
       try {
         const wasSet = await redis.set(idempotencyKey, "1", "EX", 60 * 60 * 24 * 7, "NX");
-          if (wasSet === null) {
-            console.log("[Tamara webhook] Already processed:", tamaraOrderId);
-            return NextResponse.json({ received: true });
-          }
         if (wasSet === null) {
-          console.log("[Tamara webhook] Already processed:", tamaraOrderId);
+          console.log("[Tamara webhook] Already processed — skipping:", tamaraOrderId);
           return NextResponse.json({ received: true });
         }
+        console.log("[Tamara webhook] Idempotency key set — proceeding");
       } catch (err) {
         console.error("[Tamara webhook] Idempotency Redis error — aborting:", err);
         return NextResponse.json({ error: "Redis error" }, { status: 500 });
       }
 
-      // Resolve checkout payload from Redis
+      console.log(`[Tamara webhook] Looking up Redis key tamara_checkout:${referenceId}`);
       let checkoutPayload: any;
       try {
         const raw = await redis.get(`tamara_checkout:${referenceId}`);
         if (!raw) throw new Error(`Redis key not found: tamara_checkout:${referenceId}`);
         checkoutPayload = typeof raw === "string" ? JSON.parse(raw) : raw;
+        console.log(`[Tamara webhook] Redis payload found — items=${checkoutPayload.items?.length} customer=${checkoutPayload.customer?.email} shipping=${checkoutPayload.shipping} discount=${checkoutPayload.discountAmount}`);
       } catch (err) {
-        // Clear idempotency key so the webhook can be retried
         await redis.del(idempotencyKey);
-        console.error("[Tamara webhook] Redis lookup failed on captured:", err);
+        console.error("[Tamara webhook] Redis lookup failed on captured — cleared idempotency key:", err);
         return NextResponse.json({ error: "Order data not found" }, { status: 500 });
       }
 
-      // Create Shopify order
+      console.log(`[Tamara webhook] Creating Shopify order for Tamara order ${tamaraOrderId}...`);
       try {
         const orderName = await createShopifyOrder(
           checkoutPayload.items,
@@ -313,40 +327,37 @@ export async function POST(request: NextRequest) {
           checkoutPayload.shippingHandle ?? "Shipping",
           checkoutPayload.discountAmount ?? 0,
           checkoutPayload.discountCode,
-                );
+        );
+
         if (referenceId && orderName) {
           await redis.set(`tamara_order:${referenceId}`, orderName, "EX", 60 * 60 * 24 * 7);
+          console.log(`[Tamara webhook] Stored tamara_order:${referenceId} = ${orderName}`);
         }
-        
-        console.log(
-          `✅ Shopify order ${orderName} created for Tamara order ${tamaraOrderId}`,
-        );
+
+        console.log(`✅ Shopify order ${orderName} created for Tamara order ${tamaraOrderId}`);
       } catch (err) {
-        // Clear idempotency key so Tamara's retry will attempt order creation again
         await redis.del(idempotencyKey);
-        console.error("[Tamara webhook] Shopify order creation failed:", err);
+        console.error("[Tamara webhook] Shopify order creation failed — cleared idempotency key:", err);
         return NextResponse.json({ error: "Order creation failed" }, { status: 500 });
       }
-      
 
-      // Cleanup: mark JWT token used + delete Redis checkout payload
+      console.log(`[Tamara webhook] Cleaning up — marking token used and deleting Redis checkout payload`);
       if (checkoutPayload.token) {
-        try { await markTokenUsed(checkoutPayload.token); } catch {}
+        try { await markTokenUsed(checkoutPayload.token); console.log("[Tamara webhook] Token marked used"); } catch (err) { console.warn("[Tamara webhook] markTokenUsed failed:", err); }
       }
       if (referenceId) {
-        try { await redis.del(`tamara_checkout:${referenceId}`); } catch {}
+        try { await redis.del(`tamara_checkout:${referenceId}`); console.log(`[Tamara webhook] Deleted tamara_checkout:${referenceId}`); } catch (err) { console.warn("[Tamara webhook] Redis cleanup failed:", err); }
       }
 
       break;
     }
 
-    // ── declined / expired / canceled / refunded ───────────────────────────
+    // ── declined / expired / canceled / refunded ──────────────────────────
     case "order_declined":
     case "order_expired":
-    case "order_canceled":   // Tamara uses single-l spelling
+    case "order_canceled":
     case "order_refunded": {
       console.warn(`[Tamara webhook] Order ${tamaraOrderId} — ${event_type}`);
-
       break;
     }
 
@@ -355,6 +366,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Always return 200 — Tamara retries on non-200 for failed events above
+  console.log(`[Tamara webhook] ✅ Responding 200 for event=${event_type} tamaraOrderId=${tamaraOrderId}`);
   return NextResponse.json({ received: true });
 }
