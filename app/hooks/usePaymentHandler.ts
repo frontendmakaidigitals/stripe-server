@@ -130,9 +130,9 @@ async function startTabby(customer: CustomerInfo) {
   setLoading(true);
   try {
     const itemsInAED = items.map((item) => ({
-      ...item,
-      price: aedToBase > 0 ? item.price / aedToBase : item.price,
-    }));
+  ...item,
+  price: (item as any).price_aed ?? (aedToBase > 0 ? item.price / aedToBase : item.price),
+}));
 
     const discountAmountAED =
       aedToBase > 0 ? discountAmount / aedToBase : discountAmount;
