@@ -289,10 +289,10 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
     email:          customer.email,
     currency:       session.currency?.toUpperCase() ?? "AED",
     items:          displayItems,
-    shipping:       shipping * aedToBase,        // ← was / now *
+    shipping:       parseFloat(meta.shippingDisplay || "0"),      // ✅ no math, exact value
     discountAmount: meta.discountAmountDisplay !== undefined
       ? parseFloat(meta.discountAmountDisplay)
-      : discountAmount * aedToBase,              // ← was / now *
+      : parseFloat(meta.discountAmountAED || "0") * aedToBase,
     discountCode:   meta.discountCode   || "",
     shippingHandle: meta.shippingHandle || "",
     customer,
