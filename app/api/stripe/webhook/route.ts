@@ -292,7 +292,7 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
     // ✅ display currency values — divide AED by aedToBase to get display currency
     shipping:       shipping / aedToBase,
     discountAmount: parseFloat(meta.discountAmountDisplay || "0") ||
-                    discountAmount / aedToBase,
+                discountAmount / aedToBase,
     discountCode:   meta.discountCode   || "",
     shippingHandle: meta.shippingHandle || "",
     customer,

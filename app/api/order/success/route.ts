@@ -61,8 +61,9 @@ export async function GET(request: NextRequest) {
     currency:       session.currency?.toUpperCase() ?? "AED",
     items,
     shipping:       parseFloat(session.metadata?.shippingAED        || "0") / aedToBase,
-    discountAmount: parseFloat(session.metadata?.discountAmountDisplay || "0") ||
-                parseFloat(session.metadata?.discountAmountAED || "0") / aedToBase,
+discountAmount: session.metadata?.discountAmountDisplay !== undefined
+  ? parseFloat(session.metadata.discountAmountDisplay)
+  : parseFloat(session.metadata?.discountAmountAED || "0") / aedToBase,
     discountCode:   session.metadata?.discountCode   || "",
     shippingHandle: session.metadata?.shippingHandle || "",
     customer,
