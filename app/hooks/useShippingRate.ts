@@ -6,7 +6,7 @@ import { fetchShippingRates } from "../lib/fetch-shippingrates";
 interface UseShippingRatesOptions {
   currency: string;
   total: number;
-  aedToBase: number;
+  aedToBase: number | null;  // ← was number
   items: CartItem[];
   hasAddresses: boolean;
   useNewAddress: boolean;
@@ -31,6 +31,7 @@ export function useShippingRates({
   const [ratesLoading, setRatesLoading] = useState(false);
 
   const fetchAndSet = useCallback(async (addr: CustomerInfo) => {
+    if (aedToBase === null) return;  // ← guard inside too, in case called early
     setRatesLoading(true);
     try {
       const rates = await fetchShippingRates(addr, { currency, total, aedToBase, items });
@@ -42,6 +43,8 @@ export function useShippingRates({
   }, [currency, total, aedToBase, items]);
 
   useEffect(() => {
+    if (aedToBase === null) return;  // ← wait for real rate, prevents double fetch
+
     if (hasAddresses && !useNewAddress && selectedAddressId) {
       const addr = savedAddresses.find((a) => a.id === selectedAddressId);
       if (addr) {
@@ -56,7 +59,8 @@ export function useShippingRates({
     } else {
       fetchAndSet(customer);
     }
-  }, [selectedAddressId, useNewAddress, customer.city, customer.country, customer.address, aedToBase]);
+  }, [selectedAddressId, useNewAddress, customer.city, customer.country, customer.address, aedToBase, fetchAndSet]);
+  //                                                                                                   ^^^ fetchAndSet added (was missing)
 
   return { shippingRates, selectedRate, setSelectedRate, ratesLoading, fetchShippingRates: fetchAndSet };
 }

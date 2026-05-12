@@ -91,7 +91,7 @@ export function OrderSummary({
   }
 
   return (
-    <aside className="shrink-0 bg-[#f5f5f5] border-l border-[#e0e0e0] px-8 py-10">
+    <aside className="order-1 lg:order-2 shrink-0 bg-[#f5f5f5] border-l border-[#e0e0e0] px-8 py-10">
       <div className="max-w-md sticky top-10">
         {/* Items */}
         <div className="flex flex-col gap-5 mb-6">

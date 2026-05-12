@@ -64,7 +64,7 @@ export default function CheckoutClient({
   const [discountResult, setDiscountResult] = useState<any>(null);
 
   // ── Hooks ─────────────────────────────────────────────────────────────────
-  const aedToBase = useExchangeRate(currency);
+  const aedToBase = useExchangeRate(currency) ?? 1;
   const { methods, onRequiredChange } = useCheckoutForm(prefill);
   const hasAddresses = isLoggedIn && (prefill.addresses ?? []).length > 0;
 
@@ -260,7 +260,7 @@ export default function CheckoutClient({
           className="min-h-screen bg-white text-[#1a1a1a]"
         >
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="min-h-[calc(100vh-65px)]">
+            <div className="min-h-[calc(100vh-65px)] order-2 lg:order-1">
               <main className="w-full flex container py-10 justify-end">
                 <div className="w-full max-w-lg">
                   <ContactSection isLoggedIn={isLoggedIn} />
@@ -333,6 +333,7 @@ export default function CheckoutClient({
             </div>
 
             {/* OrderSummary reads everything it needs from context */}
+
             <OrderSummary
               selectedRate={selectedRate}
               ratesLoading={ratesLoading}

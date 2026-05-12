@@ -2,7 +2,9 @@
 import { useState, useEffect } from "react";
 
 export function useExchangeRate(currency: string) {
-  const [aedToBase, setAedToBase] = useState<number>(1);
+  const [aedToBase, setAedToBase] = useState<number | null>(
+    currency === "AED" ? 1 : null  // null = still fetching
+  );
 
   useEffect(() => {
     if (currency === "AED") {

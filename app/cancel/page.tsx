@@ -6,7 +6,8 @@ export default function CancelPage() {
   const router = useRouter();
 
   return (
-    <div className="bg-neutral-100 max-w-lg rounded-2xl mx-auto my-auto p-10">
+    <div className="bg-neutral-100 container
+     max-w-lg rounded-2xl mx-auto my-auto p-10">
       <div className="grid grid-cols-1 place-items-center">
         <video muted playsInline autoPlay className="size-24 mb-5 ">
           <source src={"/payment-failed.webm"} type="video/webm" />
