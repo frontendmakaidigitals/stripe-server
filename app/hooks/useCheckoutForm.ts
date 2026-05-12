@@ -1,10 +1,10 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { checkoutSchemaWithFlags } from "../lib/checkout-schema";
 import type { CheckoutPayload } from "@/types/checkout.types";
- 
+
 export type CheckoutFormValues = {
   firstName:   string;
   email:       string;
@@ -21,35 +21,35 @@ export type CheckoutFormValues = {
 export function useCheckoutForm(prefill: CheckoutPayload["customer"]) {
   const [provinceRequired, setProvinceRequired] = useState(false);
   const [zipRequired,      setZipRequired]      = useState(false);
-
-
-  const [countryCode,      setCountryCode]      = useState("AE"); // ← add
+  const [countryCode,      setCountryCode]      = useState("AE");
 
   const provinceRequiredRef = useRef(false);
   const zipRequiredRef      = useRef(false);
-  const countryCodeRef      = useRef("AE"); // ← add
+  const countryCodeRef      = useRef("AE");
 
   useEffect(() => {
     provinceRequiredRef.current = provinceRequired;
     zipRequiredRef.current      = zipRequired;
   }, [provinceRequired, zipRequired]);
- 
-  const resolver = (async (data, context, options) => {
-    // Keep countryCode ref in sync from form data directly
-    countryCodeRef.current = data.countryCode || "AE"; // ← add
-     const sanitized = {
-    ...data,
-    phone: data.phone ?? "",
-  };
 
-  return zodResolver(
-    checkoutSchemaWithFlags(
-      provinceRequiredRef.current,
-      zipRequiredRef.current,
-      countryCodeRef.current,
-    ),
-  )(sanitized, context, options);
-  }) as Resolver<CheckoutFormValues>;
+  // ← memoized with useCallback — no longer rebuilt every render
+  const resolver = useCallback<Resolver<CheckoutFormValues>>(
+    async (data, context, options) => {
+      countryCodeRef.current = data.countryCode || "AE";
+      const sanitized = {
+        ...data,
+        phone: data.phone ?? "",
+      };
+      return zodResolver(
+        checkoutSchemaWithFlags(
+          provinceRequiredRef.current,
+          zipRequiredRef.current,
+          countryCodeRef.current,
+        ),
+      )(sanitized, context, options);
+    },
+    [] // refs are stable — no deps needed
+  );
 
   const methods = useForm<CheckoutFormValues>({
     resolver,
@@ -80,9 +80,10 @@ export function useCheckoutForm(prefill: CheckoutPayload["customer"]) {
     return () => sub.unsubscribe();
   }, [methods]);
 
+  // ← methods added to deps (was missing)
   useEffect(() => {
     methods.clearErrors();
-  }, [provinceRequired, zipRequired]);
+  }, [provinceRequired, zipRequired, methods]);
 
   function onRequiredChange(flags: {
     provinceRequired: boolean;

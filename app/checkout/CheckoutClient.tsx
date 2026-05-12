@@ -15,7 +15,6 @@ import type { PaymentMethod, Step } from "@/types/checkout.types";
 import { isTabbyAvailable } from "../lib/tabby.config";
 import { toCountryCode } from "../lib/checkout-utils";
 import { CheckoutContext } from "./checkoutContext";
-import { fetchShippingRates } from "../lib/fetch-shippingrates";
 import { useExchangeRate } from "../hooks/useExchangeRate";
 import { useCheckoutForm } from "../hooks/useCheckoutForm";
 import { useAddress } from "../hooks/useAddress";
@@ -29,7 +28,7 @@ import { DeliverySection } from "../ui/delivery-section";
 import { ShippingMethodSection } from "../ui/shipping-method";
 import { PaymentSection } from "../ui/payment-section";
 import { OrderSummary } from "../ui/order-summary";
-import { CODSuccess } from "../ui/cod-sucess";
+
 
 countriesLib.registerLocale(en);
 
@@ -68,19 +67,10 @@ export default function CheckoutClient({
   const { methods, onRequiredChange } = useCheckoutForm(prefill);
   const hasAddresses = isLoggedIn && (prefill.addresses ?? []).length > 0;
 
-  const boundFetchShippingRates = useCallback(
-    (addr: CustomerInfo) =>
-      fetchShippingRates(addr, { currency, total, aedToBase, items }).then(
-        () => {},
-      ),
-    [currency, total, aedToBase, items],
-  );
-
   const address = useAddress({
     customerId: customer.id,
     initialAddresses: prefill.addresses ?? [],
-    customer,
-    fetchShippingRates: boundFetchShippingRates,
+    customer
   });
 
   const { shippingRates, selectedRate, setSelectedRate, ratesLoading } =

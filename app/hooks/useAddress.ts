@@ -7,18 +7,13 @@ interface UseAddressOptions {
   customerId: string;
   initialAddresses: ShopifyAddress[];
   customer: CustomerInfo;
-  fetchShippingRates: (addr: CustomerInfo) => Promise<void>;
+  // ← fetchShippingRates removed entirely
 }
 
-/**
- * Manages the saved-address list and the add-new-address flow.
- * Keeps selectedAddressId and useNewAddress in sync.
- */
 export function useAddress({
   customerId,
   initialAddresses,
   customer,
-  fetchShippingRates,
 }: UseAddressOptions) {
   const [savedAddresses, setSavedAddresses] =
     useState<ShopifyAddress[]>(initialAddresses);
@@ -53,15 +48,8 @@ export function useAddress({
 
     setSavedAddresses((prev) => [...prev, formatted]);
     setSelectedAddressId(formatted.id);
-
-    // Immediately fetch rates for the newly saved address
-    await fetchShippingRates({
-      ...customer,
-      address: formatted.address1,
-      city: formatted.city,
-      country: formatted.country,
-      phone: formatted.phone,
-    });
+    // ← no fetchShippingRates call here anymore
+    // useShippingRates reacts to selectedAddressId changing automatically
   }
 
   return {
