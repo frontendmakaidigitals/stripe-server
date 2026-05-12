@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
       ...(discounts ? { discounts } : { allow_promotion_codes: false }),
       success_url: `${baseUrl}/success?provider=stripe&session_id={CHECKOUT_SESSION_ID}`,
 
-      cancel_url:  cancelUrl ?? `${baseUrl}/checkout`,
+      cancel_url:  cancelUrl ?? `${baseUrl}/cancel`,
       metadata: {
         cust:              custPacked,
         aedToBase:         (aedToBase         ?? 1).toFixed(8),
